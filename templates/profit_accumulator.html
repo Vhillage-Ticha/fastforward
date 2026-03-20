@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profit Accumulator - FF Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .negative { @apply text-red-600 font-bold; }
+        .positive { @apply text-green-600 font-bold; }
+        .low-stock { @apply bg-gray-100; }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+    <div class="max-w-6xl mx-auto">
+        <header class="flex justify-between items-center py-4 border-b border-gray-200 mb-8">
+            <h1 class="text-3xl font-bold text-indigo-700">Profit Accumulator</h1>
+            <a href="{{ url_for('dashboard') }}" class="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 px-4 rounded-xl transition duration-150 font-medium">
+                ← Dashboard
+            </a>
+        </header>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="mb-6 space-y-2">
+                {% for category, message in messages %}
+                    <li class="p-3 rounded-lg text-sm {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'danger' %}bg-red-100 text-red-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+                        {{ message }}
+                    </li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        <!-- Total Profit Summary - Dynamic Color -->
+        <div class="{% if total_potential_profit >= 0 %}bg-gradient-to-r from-green-500 to-emerald-600{% else %}bg-gradient-to-r from-red-500 to-rose-600{% endif %} p-8 rounded-2xl shadow-lg text-white mb-8">
+            <p class="text-lg font-semibold uppercase tracking-wider opacity-90">Total Profit (Current Stock)</p>
+            <p class="text-5xl font-extrabold mt-2">
+                GHS {{ "%.2f"|format(total_potential_profit) }}
+            </p>
+            <p class="text-sm mt-3 opacity-80">Based on current quantity × (selling price - original cost)</p>
+            <p class="text-sm mt-2 opacity-90">You can update both Original Cost and Selling Price for each item.</p>
+        </div>
+
+        <!-- Export Button & Search -->
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+            <button onclick="exportToCSV('profit_accumulator.csv')" 
+                    class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-xl transition shadow-md">
+                Export to CSV
+            </button>
+            <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search by item name..." 
+                   class="w-full sm:w-80 p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500">
+        </div>
+
+        <!-- Profit Table -->
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+            <div class="overflow-x-auto">
+                <table id="profitTable" class="w-full text-left">
+                    <thead class="bg-indigo-800 text-white">
+                        <tr>
+                            <th class="p-4">Item Name</th>
+                            <th class="p-4 text-right">Quantity</th>
+                            <th class="p-4 text-right">Original Cost (GHS)</th>
+                            <th class="p-4 text-right">Selling Price (GHS)</th>
+                            <th class="p-4 text-right">Profit per Unit (GHS)</th>
+                            <th class="p-4 text-right">Margin (%)</th>
+                            <th class="p-4 text-right">Total Profit (GHS)</th>
+                            <th class="p-4">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        {% if inventory|length == 0 %}
+                        <tr>
+                            <td colspan="8" class="p-8 text-center text-gray-500">No items in stock yet. Add stock first.</td>
+                        </tr>
+                        {% else %}
+                        {% for item in inventory %}
+                        <tr class="{% if item.qty <= 0 %}low-stock{% endif %}">
+                            <td class="p-4 font-medium">{{ item.name }}</td>
+                            <td class="p-4 text-right">{{ "%.2f"|format(item.qty) if item.qty != item.qty|int else item.qty|int }}</td>
+                            
+                            <!-- Original Cost (updatable) -->
+                            <td class="p-4">
+                                <form method="POST" action="{{ url_for('update_original_cost') }}" class="flex items-center gap-2">
+                                    <input type="hidden" name="id" value="{{ item.id }}">
+                                    <input type="number" step="0.01" min="0" name="original_cost" value="{{ "%.2f"|format(item.cost) }}"
+                                           class="w-32 p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
+                                        Update
+                                    </button>
+                                </form>
+                            </td>
+                            
+                            <!-- Selling Price (fetched from DB, always shown, updatable) -->
+                            <td class="p-4">
+                                <form method="POST" action="{{ url_for('update_selling_price') }}" class="flex items-center gap-2">
+                                    <input type="hidden" name="id" value="{{ item.id }}">
+                                    <input type="number" step="0.01" min="0" name="selling_price" 
+                                           value="{{ "%.2f"|format(item.selling_price) }}"
+                                           class="w-32 p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
+                                        Update
+                                    </button>
+                                </form>
+                            </td>
+                            
+                            <td class="p-4 text-right {% if item.profit_per_unit < 0 %}negative{% else %}positive{% endif %}">
+                                {{ "%.2f"|format(item.profit_per_unit) }}
+                            </td>
+                            <td class="p-4 text-right {% if item.margin_percent < 0 %}negative{% endif %}">
+                                {{ "%.2f"|format(item.margin_percent) }}%
+                            </td>
+                            <td class="p-4 text-right {% if item.item_total_profit < 0 %}negative{% else %}positive{% endif %}">
+                                {{ "%.2f"|format(item.item_total_profit) }}
+                            </td>
+                            <td class="p-4 text-center text-gray-400 text-sm">—</td>
+                        </tr>
+                        {% endfor %}
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Search filter
+        function filterTable() {
+            const input = document.getElementById('searchInput').value.toUpperCase();
+            const rows = document.querySelectorAll('#profitTable tbody tr');
+            rows.forEach(row => {
+                const itemName = row.cells[0].textContent.toUpperCase();
+                row.style.display = itemName.includes(input) ? '' : 'none';
+            });
+        }
+
+        // Export to CSV (captures current input values)
+        function exportToCSV(filename) {
+            let csv = [];
+            const table = document.getElementById('profitTable');
+            const rows = table.querySelectorAll('tr');
+
+            rows.forEach(row => {
+                let rowData = [];
+                const cells = row.querySelectorAll('td, th');
+                cells.forEach((cell, index) => {
+                    if (index === cells.length - 1) return; // Skip Actions
+
+                    let text = cell.textContent.trim();
+                    const originalInput = cell.querySelector('input[name="original_cost"]');
+                    if (originalInput) text = originalInput.value || '0.00';
+                    const sellingInput = cell.querySelector('input[name="selling_price"]');
+                    if (sellingInput) text = sellingInput.value || '0.00';
+
+                    rowData.push('"' + text.replace(/"/g, '""') + '"');
+                });
+                if (rowData.length > 0) csv.push(rowData.join(','));
+            });
+
+            csv.push(['"Total Profit"','','','',{{ total_potential_profit }}]);
+
+            const csvContent = csv.join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.setAttribute('href', URL.createObjectURL(blob));
+            link.setAttribute('download', filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>

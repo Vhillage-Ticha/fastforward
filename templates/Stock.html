@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+        .card { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06); }
+        .status-low { background-color: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+        .status-high { background-color: #f0fdf4; color: #15803d; border: 1px solid #86efac; }
+        .modal { transition: opacity 0.3s ease-in-out; }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+    <div class="max-w-4xl mx-auto">
+        <header class="flex justify-between items-center py-4 border-b border-gray-200 mb-8">
+            <h1 class="text-3xl font-bold text-indigo-700">Inventory & Stock</h1>
+            <a href="{{ url_for('dashboard') }}" class="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 px-4 rounded-lg transition duration-150 font-medium rounded-xl">
+                ← Dashboard
+            </a>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="mb-6">
+                {% for category, message in messages %}
+                    <li class="p-3 rounded-lg text-sm {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'danger' %}bg-red-100 text-red-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+                        {{ message }}
+                    </li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        <!-- Add or Replenish Stock Form -->
+        <div class="bg-white p-6 rounded-2xl card border border-gray-100 mb-8">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Add Stock</h2>
+            <form method="POST" action="{{ url_for('stock') }}" class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                
+                <div class="md:col-span-2">
+                    <label for="item_name" class="block text-sm font-medium text-gray-700 mb-1">Item Name</label>
+                    <input type="text" id="item_name" name="item_name" required
+                           class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="e.g., Darling Lemon">
+                </div>
+                
+                <div>
+                    <label for="quantity" class="block text-sm font-medium text-gray-700 mb-1">Quantity Received</label>
+                    <input type="number" step="0.01" id="quantity" name="quantity" required min="0.01"
+                           class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="e.g., 300">
+                </div>
+
+                <div>
+                    <label for="unit_cost" class="block text-sm font-medium text-gray-700 mb-1">Cost Price (GHS)</label>
+                    <input type="number" step="0.01" id="unit_cost" name="unit_cost" required min="0"
+                           class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="e.g., 50.00">
+                </div>
+
+                <div>
+                    <label for="selling_price" class="block text-sm font-medium text-gray-700 mb-1">Selling Price (GHS)</label>
+                    <input type="number" step="0.01" id="selling_price" name="selling_price" required min="0"
+                           class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="e.g., 70.00">
+                </div>
+
+                <div class="md:col-span-5 flex justify-end">
+                    <button type="submit"
+                            class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-6 rounded-xl transition duration-150 ease-in-out shadow-md hover:shadow-lg">
+                        Add / Replenish Stock
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Total Inventory Value Banner -->
+        <div class="bg-indigo-700 p-6 rounded-2xl card mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+                <p class="text-indigo-200 text-sm font-semibold uppercase tracking-wider mb-1">Total Projected Inventory Value</p>
+                <p class="text-5xl font-extrabold text-white">GHS {{ "%.2f"|format(total_inventory_value) }}</p>
+                <p class="text-indigo-300 text-xs mt-2">Sum of (Quantity &times; Selling Price) for all items in stock</p>
+            </div>
+            <div class="flex flex-col gap-2 sm:items-end">
+                <p class="text-indigo-200 text-sm"><span class="font-bold text-white">{{ stock|length }}</span> unique items</p>
+                <p class="text-indigo-200 text-sm">Total units: <span class="font-bold text-white">{{ "%.2f"|format(total_units) }}</span></p>
+                <button onclick="exportToCSV()"
+                        class="mt-2 bg-white hover:bg-indigo-50 text-indigo-700 font-semibold py-2 px-5 rounded-xl transition duration-150 shadow-md text-sm flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Export to CSV
+                </button>
+            </div>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="mb-4 flex items-center gap-3">
+            <div class="relative flex-1">
+                <span class="absolute inset-y-0 left-3 flex items-center text-gray-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+                    </svg>
+                </span>
+                <input type="text" id="stockSearch" placeholder="Search item by name..."
+                       oninput="filterStock()"
+                       class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm">
+            </div>
+            <button onclick="filterStock()"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-5 rounded-xl transition duration-150 shadow-md flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+                </svg>
+                Search
+            </button>
+            <button onclick="clearSearch()"
+                    class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-xl transition duration-150">
+                Clear
+            </button>
+        </div>
+
+        <!-- Stock Table -->
+        <div class="bg-white rounded-2xl card border border-gray-100 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-indigo-800 text-white">
+                        <tr>
+                            <th class="p-4">Item Name</th>
+                            <th class="p-4 text-right">Quantity</th>
+                            <th class="p-4 text-right">Cost Price (GHS)</th>
+                            <th class="p-4 text-right">Selling Price (GHS)</th>
+                            <th class="p-4 text-right">Total Value (GHS)</th>
+                            <th class="p-4 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        {% if stock|length == 0 %}
+                        <tr>
+                            <td colspan="5" class="p-8 text-center text-gray-500">No items in stock yet.</td>
+                        </tr>
+                        {% else %}
+                        {% for item in stock %}
+                        <tr class="stock-row">
+                            <td class="p-4 font-medium">{{ item.item_name }}</td>
+                            <td class="p-4 text-right">{{ "%.2f"|format(item.quantity) if item.quantity != item.quantity|int else item.quantity|int }}</td>
+                            <td class="p-4 text-right">{{ "%.2f"|format(item.unit_cost) }}</td>
+                            <td class="p-4 text-right">{{ "%.2f"|format(item.selling_price) }}</td>
+                            <td class="p-4 text-right font-semibold text-indigo-700">{{ "%.2f"|format(item.quantity * item.selling_price) }}</td>
+                            <td class="p-4 text-center space-x-2">
+                                <button onclick="openEditModal({{ item.id }}, '{{ item.item_name|escape }}', {{ item.quantity }}, {{ item.unit_cost }}, {{ item.selling_price }})"
+                                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
+                                    Edit
+                                </button>
+                                <button onclick="confirmDelete({{ item.id }}, '{{ item.item_name|escape }}')"
+                                        class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Edit Modal -->
+        <div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 pointer-events-none modal z-50">
+            <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full scale-95">
+                <h3 class="text-2xl font-bold text-gray-800 mb-6">Edit Stock Item</h3>
+                <form method="POST" action="{{ url_for('stock') }}">
+                    <input type="hidden" name="edit_id" id="edit-id">
+                    
+                    <div class="mb-4">
+                        <label for="edit-item_name" class="block text-sm font-medium text-gray-700 mb-1">Item Name</label>
+                        <input type="text" id="edit-item_name" name="item_name" required
+                               class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="edit-quantity" class="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                        <input type="number" step="0.01" id="edit-quantity" name="quantity" required min="0"
+                               class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="edit-unit_cost" class="block text-sm font-medium text-gray-700 mb-1">Cost Price (GHS)</label>
+                        <input type="number" step="0.01" id="edit-unit_cost" name="unit_cost" required min="0"
+                               class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                    
+                    <div class="mb-6">
+                        <label for="edit-selling_price" class="block text-sm font-medium text-gray-700 mb-1">Selling Price (GHS)</label>
+                        <input type="number" step="0.01" id="edit-selling_price" name="selling_price" required min="0"
+                               class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                    
+                    <div class="flex justify-end space-x-3">
+                        <button type="button" onclick="closeEditModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-6 py-2 rounded-lg">
+                            Cancel
+                        </button>
+                        <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg">
+                            Save Changes
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Delete Confirmation Modal -->
+        <div id="deleteModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 pointer-events-none modal z-50">
+            <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full scale-95">
+                <h3 class="text-2xl font-bold text-red-600 mb-4">Confirm Delete</h3>
+                <p class="text-gray-700 mb-6">
+                    Are you sure you want to delete <span id="item_name_to_delete" class="font-bold"></span>?
+                    This action cannot be undone.
+                </p>
+                <form method="POST" action="{{ url_for('stock') }}">
+                    <input type="hidden" name="delete_id" id="delete-id">
+                    <div class="flex justify-end space-x-3">
+                        <button type="button" onclick="closeDeleteModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-6 py-2 rounded-lg">
+                            Cancel
+                        </button>
+                        <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg">
+                            Delete
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Opens the Edit Modal and populates it with the item's current data.
+         */
+        function openEditModal(id, name, quantity, unitCost, sellingPrice) {
+            document.getElementById('edit-id').value = id;
+            document.getElementById('edit-item_name').value = name;
+            document.getElementById('edit-quantity').value = parseFloat(quantity);
+            document.getElementById('edit-unit_cost').value = parseFloat(unitCost).toFixed(2);
+            document.getElementById('edit-selling_price').value = parseFloat(sellingPrice).toFixed(2);
+
+            const modal = document.getElementById('editModal');
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            modal.querySelector('.shadow-2xl').classList.remove('scale-95');
+            modal.querySelector('.shadow-2xl').classList.add('scale-100');
+        }
+
+        function closeEditModal() {
+            const modal = document.getElementById('editModal');
+            modal.classList.add('opacity-0', 'pointer-events-none');
+            modal.querySelector('.shadow-2xl').classList.remove('scale-100');
+            modal.querySelector('.shadow-2xl').classList.add('scale-95');
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('editModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('editModal')) closeEditModal();
+        });
+
+        /**
+         * Opens the Delete Confirmation Modal.
+         */
+        function confirmDelete(id, name) {
+            document.getElementById('delete-id').value = id;
+            document.getElementById('item_name_to_delete').textContent = name;
+
+            const modal = document.getElementById('deleteModal');
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            modal.querySelector('.shadow-2xl').classList.remove('scale-95');
+            modal.querySelector('.shadow-2xl').classList.add('scale-100');
+        }
+
+        function closeDeleteModal() {
+            const modal = document.getElementById('deleteModal');
+            modal.classList.add('opacity-0', 'pointer-events-none');
+            modal.querySelector('.shadow-2xl').classList.remove('scale-100');
+            modal.querySelector('.shadow-2xl').classList.add('scale-95');
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('deleteModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('deleteModal')) closeDeleteModal();
+        });
+
+        // Search/filter stock rows
+        function filterStock() {
+            const query = document.getElementById('stockSearch').value.toLowerCase().trim();
+            const rows = document.querySelectorAll('.stock-row');
+            let anyVisible = false;
+
+            rows.forEach(row => {
+                const name = row.querySelector('td:first-child').textContent.toLowerCase();
+                if (name.includes(query)) {
+                    row.style.display = '';
+                    anyVisible = true;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+
+            // Show/hide no-results message
+            let noResult = document.getElementById('no-search-result');
+            if (!anyVisible && query !== '') {
+                if (!noResult) {
+                    noResult = document.createElement('tr');
+                    noResult.id = 'no-search-result';
+                    noResult.innerHTML = '<td colspan="5" class="p-6 text-center text-gray-400">No items match your search.</td>';
+                    document.querySelector('tbody').appendChild(noResult);
+                }
+                noResult.style.display = '';
+            } else if (noResult) {
+                noResult.style.display = 'none';
+            }
+        }
+
+        function clearSearch() {
+            document.getElementById('stockSearch').value = '';
+            filterStock();
+        }
+
+        // Allow pressing Enter in search box
+        document.getElementById('stockSearch').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') filterStock();
+        });
+
+        // Export stock table to CSV
+        function exportToCSV() {
+            const rows = [
+                ['Item Name', 'Quantity', 'Cost Price (GHS)', 'Selling Price (GHS)', 'Total Value (GHS)']
+            ];
+
+            const tableRows = document.querySelectorAll('.stock-row');
+            tableRows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 5) {
+                    const name      = cells[0].textContent.trim();
+                    const qty       = cells[1].textContent.trim();
+                    const cost      = cells[2].textContent.trim();
+                    const selling   = cells[3].textContent.trim();
+                    const total     = cells[4].textContent.trim();
+                    rows.push([name, qty, cost, selling, total]);
+                }
+            });
+
+            // Add totals row
+            const totalValue = document.querySelector('.text-5xl').textContent.replace('GHS', '').trim();
+            rows.push(['', '', '', 'TOTAL PROJECTED VALUE', totalValue]);
+
+            const csvContent = rows.map(r =>
+                r.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(',')
+            ).join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'stock_inventory_' + new Date().toISOString().slice(0, 10) + '.csv';
+            link.click();
+        }
+    </script>
+</body>
+</html>

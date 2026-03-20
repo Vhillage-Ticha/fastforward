@@ -1,0 +1,534 @@
+import os
+import json
+import sqlite3
+from datetime import date
+from functools import wraps
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+from werkzeug.security import generate_password_hash, check_password_hash
+from database import get_db_connection, init_db
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'ff-manager-secret-key-change-me-in-production'
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Please log in to access this page.', 'danger')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password']
+        if not username or not password:
+            flash('Username and password are required.', 'danger')
+            return redirect(url_for('register'))
+        hashed_password = generate_password_hash(password)
+        conn = get_db_connection()
+        try:
+            conn.execute('INSERT INTO users (username, password) VALUES (?, ?)', (username, hashed_password))
+            conn.commit()
+            flash('Registration successful! Please log in.', 'success')
+            return redirect(url_for('login'))
+        except sqlite3.IntegrityError:
+            flash('Username already exists. Please choose a different one.', 'danger')
+        finally:
+            conn.close()
+    return render_template('Register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password']
+        conn = get_db_connection()
+        user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        conn.close()
+        if user and check_password_hash(user['password'], password):
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            flash('Logged in successfully!', 'success')
+            return redirect(url_for('dashboard'))
+        else:
+            flash('Invalid username or password.', 'danger')
+    return render_template('Login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('login'))
+
+@app.route('/')
+@login_required
+def index():
+    return redirect(url_for('dashboard'))
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    user_id = session['user_id']
+    conn = get_db_connection()
+    total_items = conn.execute('SELECT COUNT(*) FROM stock WHERE user_id = ?', (user_id,)).fetchone()[0]
+    total_quantity = conn.execute('SELECT SUM(quantity) FROM stock WHERE user_id = ?', (user_id,)).fetchone()[0] or 0.0
+    total_profit_potential = 0.0
+    try:
+        result = conn.execute(
+            'SELECT SUM((selling_price - unit_cost) * quantity) FROM stock WHERE user_id = ? AND quantity > 0',
+            (user_id,)
+        ).fetchone()[0]
+        total_profit_potential = result or 0.0
+    except sqlite3.OperationalError:
+        pass
+    conn.close()
+    return render_template('dashboard.html', total_items=total_items, total_quantity=total_quantity, total_profit_potential=total_profit_potential)
+
+@app.route('/get_products')
+@login_required
+def get_products():
+    user_id = session['user_id']
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            'SELECT id, item_name, quantity, unit_cost, selling_price FROM stock WHERE user_id = ? AND quantity > 0 ORDER BY item_name',
+            (user_id,)
+        ).fetchall()
+    finally:
+        conn.close()
+    products = [{'id': r['id'], 'name': r['item_name'], 'stock': r['quantity'],
+                 'price': r['selling_price'], 'cost': r['unit_cost']} for r in rows]
+    return jsonify({'products': products})
+
+@app.route('/record_sale', methods=['POST'])
+@login_required
+def record_sale():
+    user_id = session['user_id']
+    data = request.get_json()
+    items = data.get('items', [])
+    if not items:
+        return jsonify({'status': 'error', 'message': 'No items in sale.'}), 400
+    conn = get_db_connection()
+    try:
+        total_amount = 0.0
+        items_sold_details = []
+        for item in items:
+            item_id = item['id']
+            qty_sold = float(item['quantity'])
+            price = float(item['price'])
+            row = conn.execute('SELECT quantity, item_name FROM stock WHERE id = ? AND user_id = ?', (item_id, user_id)).fetchone()
+            if not row:
+                return jsonify({'status': 'error', 'message': f'Item ID {item_id} not found.'}), 400
+            if row['quantity'] < qty_sold:
+                return jsonify({'status': 'error', 'message': f'Not enough stock for "{row["item_name"]}".'}), 400
+            conn.execute('UPDATE stock SET quantity = quantity - ? WHERE id = ? AND user_id = ?', (qty_sold, item_id, user_id))
+            subtotal = qty_sold * price
+            total_amount += subtotal
+            items_sold_details.append({'name': row['item_name'], 'qty': qty_sold, 'price': price, 'subtotal': subtotal})
+        today = date.today().isoformat()
+        conn.execute('INSERT INTO sales (user_id, total_amount, sale_date, items_sold) VALUES (?, ?, ?, ?)',
+                     (user_id, total_amount, today, json.dumps(items_sold_details)))
+        conn.commit()
+        return jsonify({'status': 'success', 'total': total_amount})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/stock', methods=['GET', 'POST'])
+@login_required
+def stock():
+    user_id = session['user_id']
+    conn = get_db_connection()
+    if request.method == 'POST':
+        # Handle Delete
+        delete_id = request.form.get('delete_id')
+        if delete_id:
+            conn.execute('DELETE FROM stock WHERE id = ? AND user_id = ?', (delete_id, user_id))
+            conn.commit()
+            flash('Item deleted successfully.', 'success')
+            conn.close()
+            return redirect(url_for('stock'))
+
+        # Handle Edit
+        edit_id = request.form.get('edit_id')
+        if edit_id:
+            item_name = request.form.get('item_name', '').strip()
+            quantity = float(request.form.get('quantity', 0))
+            unit_cost = float(request.form.get('unit_cost', 0))
+            selling_price = float(request.form.get('selling_price', 0))
+            if quantity < 0 or unit_cost < 0 or selling_price < 0:
+                flash('Values cannot be negative.', 'danger')
+                conn.close()
+                return redirect(url_for('stock'))
+            conn.execute(
+                'UPDATE stock SET item_name=?, quantity=?, unit_cost=?, selling_price=? WHERE id=? AND user_id=?',
+                (item_name, quantity, unit_cost, selling_price, edit_id, user_id)
+            )
+            conn.commit()
+            flash(f'Item "{item_name}" updated successfully.', 'success')
+            conn.close()
+            return redirect(url_for('stock'))
+
+        # Handle Add / Replenish
+        item_name = request.form.get('item_name', '').strip()
+        quantity = float(request.form.get('quantity', 0))
+        unit_cost = float(request.form.get('unit_cost', 0))
+        selling_price = float(request.form.get('selling_price', 0))
+
+        if quantity <= 0 or selling_price < 0:
+            flash('Invalid quantity or selling price.', 'danger')
+            conn.close()
+            return redirect(url_for('stock'))
+
+        existing = conn.execute(
+            'SELECT id, quantity FROM stock WHERE user_id=? AND item_name=?',
+            (user_id, item_name)
+        ).fetchone()
+
+        if existing:
+            # On replenish: update quantity, and update both cost and selling price
+            conn.execute(
+                'UPDATE stock SET quantity=?, unit_cost=?, selling_price=? WHERE id=? AND user_id=?',
+                (existing['quantity'] + quantity, unit_cost, selling_price, existing['id'], user_id)
+            )
+            flash(f'Stock replenished for "{item_name}".', 'success')
+        else:
+            conn.execute(
+                'INSERT INTO stock (user_id, item_name, quantity, unit_cost, selling_price) VALUES (?,?,?,?,?)',
+                (user_id, item_name, quantity, unit_cost, selling_price)
+            )
+            flash(f'New item "{item_name}" added to stock.', 'success')
+        conn.commit()
+
+    try:
+        stock_items = conn.execute(
+            'SELECT id, item_name, quantity, unit_cost, selling_price FROM stock WHERE user_id=? ORDER BY item_name',
+            (user_id,)
+        ).fetchall()
+    except sqlite3.OperationalError:
+        stock_items = conn.execute(
+            'SELECT id, item_name, quantity, 0 as unit_cost, 0 as selling_price FROM stock WHERE user_id=? ORDER BY item_name',
+            (user_id,)
+        ).fetchall()
+
+    total_inventory_value = sum(item['quantity'] * item['selling_price'] for item in stock_items)
+    total_units = sum(item['quantity'] for item in stock_items)
+
+    conn.close()
+    return render_template('Stock.html', stock=stock_items,
+                           total_inventory_value=total_inventory_value,
+                           total_units=total_units)
+
+@app.route('/profit_accumulator')
+@login_required
+def profit_accumulator():
+    user_id = session['user_id']
+    conn = get_db_connection()
+    try:
+        stock_data = conn.execute('SELECT id, item_name, quantity, unit_cost, selling_price FROM stock WHERE user_id=? ORDER BY item_name', (user_id,)).fetchall()
+    except sqlite3.OperationalError:
+        stock_data = conn.execute('SELECT id, item_name, quantity, unit_cost, 0 as selling_price FROM stock WHERE user_id=? ORDER BY item_name', (user_id,)).fetchall()
+    conn.close()
+    inventory_analysis = []
+    total_potential_profit = 0.0
+    for item in stock_data:
+        d = dict(item)
+        qty, cost, sp = d['quantity'], d['unit_cost'], d.get('selling_price', 0.0) or 0.0
+        ppu = sp - cost
+        margin = (ppu / sp * 100) if sp > 0 else 0.0
+        itp = ppu * qty if qty > 0 else 0.0
+        if qty > 0: total_potential_profit += itp
+        inventory_analysis.append({'id': d['id'], 'name': d['item_name'], 'qty': qty, 'cost': cost,
+                                    'selling_price': sp, 'profit_per_unit': ppu, 'margin_percent': margin, 'item_total_profit': itp})
+    return render_template('profit_accumulator.html', inventory=inventory_analysis, total_potential_profit=total_potential_profit)
+
+@app.route('/update_selling_price', methods=['POST'])
+@login_required
+def update_selling_price():
+    user_id = session['user_id']
+    conn = get_db_connection()
+    conn.execute('UPDATE stock SET selling_price=? WHERE id=? AND user_id=?',
+                 (float(request.form.get('selling_price', 0)), request.form.get('id'), user_id))
+    conn.commit()
+    conn.close()
+    flash('Selling price updated.', 'success')
+    return redirect(url_for('profit_accumulator'))
+
+@app.route('/update_original_cost', methods=['POST'])
+@login_required
+def update_original_cost():
+    user_id = session['user_id']
+    new_cost = float(request.form.get('original_cost', 0))
+    if new_cost < 0:
+        flash('Cost cannot be negative.', 'danger')
+        return redirect(url_for('profit_accumulator'))
+    conn = get_db_connection()
+    conn.execute('UPDATE stock SET unit_cost=? WHERE id=? AND user_id=?',
+                 (new_cost, request.form.get('id'), user_id))
+    conn.commit()
+    conn.close()
+    flash('Original cost updated.', 'success')
+    return redirect(url_for('profit_accumulator'))
+
+@app.route('/payables', methods=['GET', 'POST'])
+@login_required
+def payables():
+    user_id = session['user_id']
+    conn = get_db_connection()
+    if request.method == 'POST':
+        pid = request.form.get('id', '').strip()
+        supplier = request.form.get('supplier', '').strip()
+        amount = float(request.form.get('amount', 0))
+        tx_date = request.form.get('transaction_date', '')
+        if not supplier or amount <= 0 or not tx_date:
+            flash('All fields are required.', 'danger')
+            conn.close()
+            return redirect(url_for('payables'))
+        if pid:
+            conn.execute('UPDATE payables SET supplier=?, remaining_amount=?, due_date=? WHERE id=? AND user_id=?',
+                         (supplier, amount, tx_date, pid, user_id))
+            flash('Payable updated.', 'success')
+        else:
+            conn.execute('INSERT INTO payables (user_id, supplier, original_amount, remaining_amount, due_date) VALUES (?,?,?,?,?)',
+                         (user_id, supplier, amount, amount, tx_date))
+            flash('Payable recorded.', 'success')
+        conn.commit()
+        conn.close()
+        return redirect(url_for('payables'))
+    rows = conn.execute('SELECT id, supplier, original_amount, remaining_amount, due_date FROM payables WHERE user_id=? ORDER BY due_date DESC', (user_id,)).fetchall()
+    payables_list = []
+    cleared_payables_list = []
+    total_payables_calc = 0.0
+    for r in rows:
+        rem = r['remaining_amount']
+        latest = conn.execute('SELECT MAX(transaction_date) as latest FROM transactions WHERE payable_id=?', (r['id'],)).fetchone()
+        display_date = latest['latest'] if latest and latest['latest'] else r['due_date']
+        if rem > 0.005:
+            total_payables_calc += rem
+            payables_list.append({'id': r['id'], 'supplier': r['supplier'], 'original_amount': r['original_amount'],
+                                   'amount': rem, 'transaction_date': display_date, 'status': 'Outstanding'})
+        else:
+            cleared_payables_list.append({'id': r['id'], 'supplier': r['supplier'], 'original_amount': r['original_amount'],
+                                          'amount': rem, 'transaction_date': display_date, 'status': 'Paid'})
+    conn.close()
+    return render_template('Payables.html', payables=payables_list, cleared_payables=cleared_payables_list, total_payables_calc=total_payables_calc)
+
+@app.route('/delete_Payables', methods=['POST'])
+@login_required
+def delete_Payables():
+    user_id = session['user_id']
+    pid = request.form.get('id')
+    conn = get_db_connection()
+    conn.execute('DELETE FROM transactions WHERE payable_id=?', (pid,))
+    conn.execute('DELETE FROM payables WHERE id=? AND user_id=?', (pid, user_id))
+    conn.commit()
+    conn.close()
+    flash('Payable deleted.', 'success')
+    return redirect(url_for('payables'))
+
+@app.route('/receivables', methods=['GET', 'POST'])
+@login_required
+def receivables():
+    user_id = session['user_id']
+    conn = get_db_connection()
+    if request.method == 'POST':
+        rid = request.form.get('id', '').strip()
+        customer = request.form.get('customer', '').strip()
+        amount = float(request.form.get('amount', 0))
+        tx_date = request.form.get('transaction_date', '')
+        if not customer or amount <= 0 or not tx_date:
+            flash('All fields are required.', 'danger')
+            conn.close()
+            return redirect(url_for('receivables'))
+        if rid:
+            conn.execute('UPDATE receivables SET customer=?, remaining_amount=?, due_date=? WHERE id=? AND user_id=?',
+                         (customer, amount, tx_date, rid, user_id))
+            flash('Receivable updated.', 'success')
+        else:
+            conn.execute('INSERT INTO receivables (user_id, customer, original_amount, remaining_amount, due_date) VALUES (?,?,?,?,?)',
+                         (user_id, customer, amount, amount, tx_date))
+            flash('Receivable recorded.', 'success')
+        conn.commit()
+        conn.close()
+        return redirect(url_for('receivables'))
+    rows = conn.execute('SELECT id, customer, original_amount, remaining_amount, due_date FROM receivables WHERE user_id=? ORDER BY due_date DESC', (user_id,)).fetchall()
+    receivables_list = []
+    cleared_receivables_list = []
+    total_receivables_calc = 0.0
+    for r in rows:
+        rem = r['remaining_amount']
+        latest = conn.execute('SELECT MAX(transaction_date) as latest FROM transactions WHERE receivable_id=?', (r['id'],)).fetchone()
+        display_date = latest['latest'] if latest and latest['latest'] else r['due_date']
+        if rem > 0.005:
+            total_receivables_calc += rem
+            receivables_list.append({'id': r['id'], 'customer': r['customer'], 'original_amount': r['original_amount'],
+                                      'amount': rem, 'transaction_date': display_date, 'status': 'Outstanding'})
+        else:
+            cleared_receivables_list.append({'id': r['id'], 'customer': r['customer'], 'original_amount': r['original_amount'],
+                                              'amount': rem, 'transaction_date': display_date, 'status': 'Collected'})
+    conn.close()
+    return render_template('Receivables.html', receivables=receivables_list, cleared_receivables=cleared_receivables_list, total_receivables_calc=total_receivables_calc)
+
+@app.route('/delete_Receivables', methods=['POST'])
+@login_required
+def delete_Receivables():
+    user_id = session['user_id']
+    rid = request.form.get('id')
+    conn = get_db_connection()
+    conn.execute('DELETE FROM transactions WHERE receivable_id=?', (rid,))
+    conn.execute('DELETE FROM receivables WHERE id=? AND user_id=?', (rid, user_id))
+    conn.commit()
+    conn.close()
+    flash('Receivable deleted.', 'success')
+    return redirect(url_for('receivables'))
+
+@app.route('/add_transaction', methods=['POST'])
+@login_required
+def add_transaction():
+    user_id = session['user_id']
+    data = request.get_json()
+    entity_id = int(data.get('entity_id'))
+    entity_type = data.get('entity_type')
+    amount = float(data.get('amount', 0))
+    tx_date = data.get('date', date.today().isoformat())
+    tx_type = data.get('transaction_type')
+    description = data.get('description', '')
+    if amount <= 0:
+        return jsonify({'status': 'error', 'message': 'Amount must be positive.'}), 400
+    conn = get_db_connection()
+    try:
+        if entity_type == 'payable':
+            row = conn.execute('SELECT remaining_amount FROM payables WHERE id=? AND user_id=?', (entity_id, user_id)).fetchone()
+            if not row: return jsonify({'status': 'error', 'message': 'Not found.'}), 404
+            new_bal = (row['remaining_amount'] - amount) if tx_type == 'payment' else (row['remaining_amount'] + amount)
+            conn.execute('UPDATE payables SET remaining_amount=? WHERE id=?', (new_bal, entity_id))
+            signed = amount if tx_type == 'payment' else -amount
+            conn.execute('INSERT INTO transactions (user_id, payable_id, amount, transaction_date, description) VALUES (?,?,?,?,?)',
+                         (user_id, entity_id, signed, tx_date, description))
+        else:
+            row = conn.execute('SELECT remaining_amount FROM receivables WHERE id=? AND user_id=?', (entity_id, user_id)).fetchone()
+            if not row: return jsonify({'status': 'error', 'message': 'Not found.'}), 404
+            new_bal = (row['remaining_amount'] - amount) if tx_type == 'payment' else (row['remaining_amount'] + amount)
+            conn.execute('UPDATE receivables SET remaining_amount=? WHERE id=?', (new_bal, entity_id))
+            signed = amount if tx_type == 'payment' else -amount
+            conn.execute('INSERT INTO transactions (user_id, receivable_id, amount, transaction_date, description) VALUES (?,?,?,?,?)',
+                         (user_id, entity_id, signed, tx_date, description))
+        conn.commit()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/history/<entity_type>/<int:entity_id>')
+@login_required
+def history(entity_type, entity_id):
+    user_id = session['user_id']
+    conn = get_db_connection()
+    if entity_type == 'payable':
+        entity = conn.execute('SELECT supplier as name, original_amount, remaining_amount FROM payables WHERE id=? AND user_id=?', (entity_id, user_id)).fetchone()
+        txs = conn.execute('SELECT id, amount, transaction_date, description FROM transactions WHERE payable_id=? ORDER BY transaction_date ASC', (entity_id,)).fetchall()
+    else:
+        entity = conn.execute('SELECT customer as name, original_amount, remaining_amount FROM receivables WHERE id=? AND user_id=?', (entity_id, user_id)).fetchone()
+        txs = conn.execute('SELECT id, amount, transaction_date, description FROM transactions WHERE receivable_id=? ORDER BY transaction_date ASC', (entity_id,)).fetchall()
+    conn.close()
+    if not entity: return jsonify({'error': 'Not found'}), 404
+    history_list = []
+    running = entity['original_amount']
+    for tx in txs:
+        amt = tx['amount']
+        running -= amt
+        history_list.append({'id': tx['id'], 'amount': f"{abs(amt):.2f}", 'date': tx['transaction_date'],
+                              'description': tx['description'] or '',
+                              'tx_label': 'Payment' if amt > 0 else 'New Charge',
+                              'tx_color': 'text-green-600' if amt > 0 else 'text-red-600',
+                              'remaining_balance': f"{running:.2f}"})
+    history_list.reverse()
+    return jsonify({'name': entity['name'], 'original_amount': f"{entity['original_amount']:.2f}",
+                    'remaining_amount': f"{entity['remaining_amount']:.2f}", 'history': history_list})
+
+@app.route('/delete_transaction', methods=['POST'])
+@login_required
+def delete_transaction():
+    user_id = session['user_id']
+    data = request.get_json()
+    tx_id = int(data.get('transaction_id'))
+    conn = get_db_connection()
+    try:
+        tx = conn.execute('SELECT * FROM transactions WHERE id=? AND user_id=?', (tx_id, user_id)).fetchone()
+        if not tx: return jsonify({'status': 'error', 'message': 'Not found.'}), 404
+        amt = tx['amount']
+        if tx['payable_id']:
+            conn.execute('UPDATE payables SET remaining_amount = remaining_amount + ? WHERE id=?', (amt, tx['payable_id']))
+        elif tx['receivable_id']:
+            conn.execute('UPDATE receivables SET remaining_amount = remaining_amount + ? WHERE id=?', (amt, tx['receivable_id']))
+        conn.execute('DELETE FROM transactions WHERE id=?', (tx_id,))
+        conn.commit()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/expenses', methods=['GET', 'POST'])
+@login_required
+def expenses():
+    user_id = session['user_id']
+    conn = get_db_connection()
+    if request.method == 'POST':
+        description = request.form.get('description', '').strip()
+        expense_date = request.form.get('expense_date', '')
+        amount = float(request.form.get('amount', 0))
+        if not description or not expense_date or amount <= 0:
+            flash('All fields are required.', 'danger')
+            conn.close()
+            return redirect(url_for('expenses'))
+        conn.execute('INSERT INTO expenses (user_id, description, expense_date, amount) VALUES (?,?,?,?)',
+                     (user_id, description, expense_date, amount))
+        conn.commit()
+        flash('Expense recorded.', 'success')
+        conn.close()
+        return redirect(url_for('expenses'))
+    rows = conn.execute('SELECT id, description, expense_date, amount FROM expenses WHERE user_id=? ORDER BY expense_date DESC', (user_id,)).fetchall()
+    conn.close()
+    expenses_list = [dict(r) for r in rows]
+    total_expenses = sum(e['amount'] for e in expenses_list)
+    return render_template('Expenses.html', expenses=expenses_list, total_expenses=total_expenses)
+
+@app.route('/delete_expense', methods=['POST'])
+@login_required
+def delete_expense():
+    user_id = session['user_id']
+    conn = get_db_connection()
+    conn.execute('DELETE FROM expenses WHERE id=? AND user_id=?', (request.form.get('id'), user_id))
+    conn.commit()
+    conn.close()
+    flash('Expense deleted.', 'success')
+    return redirect(url_for('expenses'))
+
+@app.route('/daily_sales_summary')
+@login_required
+def daily_sales_summary():
+    user_id = session['user_id']
+    conn = get_db_connection()
+    rows = conn.execute('SELECT id, total_amount, sale_date, items_sold FROM sales WHERE user_id=? ORDER BY sale_date DESC, id DESC', (user_id,)).fetchall()
+    conn.close()
+    sales_list = []
+    for r in rows:
+        try:
+            items = json.loads(r['items_sold'])
+        except Exception:
+            items = []
+        sales_list.append({'id': r['id'], 'total_amount': r['total_amount'], 'sale_date': r['sale_date'], 'items': items})
+    return render_template('daily_sales_summary.html', sales=sales_list)
+
+if __name__ == '__main__':
+    init_db()
+    app.run(debug=True)

@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - FF Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .sidebar { transition: transform 0.3s ease-in-out; }
+        .sidebar-visible { transform: translateX(0); }
+        .sidebar-hidden { transform: translateX(-100%); }
+        html, body { height: 100%; }
+        
+        /* --- CHANGE 3.1: REMOVED old @media query --- */
+
+        /* Custom style for selected product in the list */
+        .product-item.selected {
+            background-color: #d1e7dd; /* Light green background */
+            border-color: #198754;
+            box-shadow: 0 0 0 2px #198754;
+        }
+
+        /* --- CHANGE 3.2: NEW CSS for content pushing --- */
+        #main-content {
+            transition: margin-left 0.3s ease-in-out;
+        }
+
+        @media (min-width: 1024px) {
+            /* On desktop, shift content when sidebar is visible */
+            .sidebar-visible ~ #main-content {
+                margin-left: 16rem; /* w-64 */
+            }
+            /* On desktop, full width when sidebar is hidden */
+            .sidebar-hidden ~ #main-content {
+                margin-left: 0;
+            }
+        }
+        /* On mobile (< 1024px), content is always full width (as sidebar overlays) */
+    </style>
+</head>
+<body class="h-full flex">
+    <div id="sidebar" class="sidebar fixed inset-y-0 left-0 w-64 bg-indigo-800 text-white p-6 z-30 sidebar-hidden">
+        <h2 class="text-2xl font-bold mb-8 text-indigo-200">FF Manager</h2>
+        
+        <nav class="space-y-3">
+            <a href="{{ url_for('dashboard') }}" class="flex items-center p-3 rounded-xl bg-indigo-700 font-semibold shadow-lg transition duration-150 ease-in-out">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2.586a1 1 0 01.293-.707l2.828-2.828a1 1 0 011.414 0l2.828 2.828a1 1 0 01.293.707V17a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" /></svg>
+                Dashboard
+            </a>
+            <a href="{{ url_for('payables') }}" class="flex items-center p-3 rounded-xl hover:bg-indigo-700 transition duration-150 ease-in-out">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm12 3a1 1 0 100 2 1 1 0 000-2zm-3 1a1 1 0 11-2 0 1 1 0 012 0zm-2 2a1 1 0 100 2 1 1 0 000-2zm4 0a1 1 0 11-2 0 1 1 0 012 0zm-7-2a1 1 0 100 2 1 1 0 000-2zm-2 2a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd" /></svg>
+                Payables
+            </a>
+            <a href="{{ url_for('receivables') }}" class="flex items-center p-3 rounded-xl hover:bg-indigo-700 transition duration-150 ease-in-out">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm12 3a1 1 0 100 2 1 1 0 000-2zm-3 1a1 1 0 11-2 0 1 1 0 012 0zm-2 2a1 1 0 100 2 1 1 0 000-2zm4 0a1 1 0 11-2 0 1 1 0 012 0zm-7-2a1 1 0 100 2 1 1 0 000-2zm-2 2a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd" /></svg>
+                Receivables
+            </a>
+            <a href="{{ url_for('expenses') }}" class="flex items-center p-3 rounded-xl hover:bg-indigo-700 transition duration-150 ease-in-out">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a1 1 0 011 1v1a1 1 0 01-2 0V3a1 1 0 011-1zm6 1a1 1 0 011 1v1a1 1 0 01-2 0V4a1 1 0 011-1zm-4 4a1 1 0 011 1v1a1 1 0 01-2 0V8a1 1 0 011-1zm-4 4a1 1 0 011 1v1a1 1 0 01-2 0v-1a1 1 0 011-1zm8-4a1 1 0 011 1v1a1 1 0 01-2 0V8a1 1 0 011-1zm-4-4a1 1 0 011 1v1a1 1 0 01-2 0V4a1 1 0 011-1zM5 13a1 1 0 011-1h8a1 1 0 011 1v1a1 1 0 01-1 1H6a1 1 0 01-1-1v-1z" /></svg>
+                Expenses
+            </a>
+            <a href="{{ url_for('stock') }}" class="flex items-center p-3 rounded-xl hover:bg-indigo-700 transition duration-150 ease-in-out">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7 2a2 2 0 00-2 2v12a2 2 0 002 2h6a2 2 0 002-2V4a2 2 0 00-2-2H7zm0 14V4h6v12H7zm3-11a1 1 0 00-1 1v3a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                Stock
+            </a>
+            <a href="{{ url_for('daily_sales_summary') }}" class="flex items-center p-3 rounded-xl hover:bg-indigo-700 transition duration-150 ease-in-out">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor"><path d="M5 4a1 1 0 00-1 1v7a1 1 0 001 1h10a1 1 0 001-1V5a1 1 0 00-1-1H5zM3 3a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V3zM6 16a1 1 0 100 2h8a1 1 0 100-2H6z" /></svg>
+                Daily Sales Summary
+            </a>
+        </nav>
+
+        <div class="mt-auto pt-6 border-t border-indigo-700">
+             <a href="{{ url_for('logout') }}" class="flex items-center p-3 rounded-xl hover:bg-indigo-700 transition duration-150 ease-in-out text-red-300 hover:text-red-100">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-2 0V4H4v12h12v-1a1 1 0 112 0v1a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2h12a1 1 0 011 1v2a1 1 0 11-2 0V3H4z" clip-rule="evenodd" /><path fill-rule="evenodd" d="M10 8a1 1 0 011 1v6a1 1 0 11-2 0V9a1 1 0 011-1z" clip-rule="evenodd" /><path fill-rule="evenodd" d="M14 10a1 1 0 100-2h-4a1 1 0 100 2h4z" clip-rule="evenodd" /></svg>
+                Logout
+            </a>
+        </div>
+    </div>
+    
+    <div id="main-content" class="flex-grow p-4 lg:p-6 flex flex-col h-full overflow-y-auto"> 
+        
+        <header class="flex items-center justify-between p-4 bg-white shadow-md rounded-xl mb-6">
+            <h1 class="text-xl lg:text-3xl font-extrabold text-indigo-700">Fast Forward Sales Dashboard</h1>
+            
+            <div class="flex space-x-4 items-center">
+                <button id="hamburger" class="p-2 text-indigo-700 focus:outline-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+                    </svg>
+                </button>
+                <a href="{{ url_for('logout') }}" class="hidden sm:block px-4 py-2 text-sm font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition duration-150 shadow-md">
+                    Logout
+                </a>
+            </div>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="mb-4">
+                {% for category, message in messages %}
+                    <li class="p-4 rounded-xl text-sm font-semibold 
+                        {% if category == 'success' %}bg-green-100 text-green-800
+                        {% elif category == 'danger' %}bg-red-100 text-red-800
+                        {% else %}bg-blue-100 text-blue-800{% endif %} shadow-md">
+                        {{ message }}
+                    </li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        <div id="confirmation-box" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
+            <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm">
+                <h4 class="text-xl font-bold text-red-600 mb-4">Confirm Deletion</h4>
+                <p id="confirmation-text" class="mb-6 text-gray-700">Are you sure you want to delete this item?</p>
+                <div class="flex justify-end space-x-4">
+                    <button id="confirm-delete-btn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold">Delete</button>
+                    <button id="cancel-delete-btn" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition font-semibold">Cancel</button>
+                </div>
+            </div>
+        </div>
+        
+        <main class="flex-grow grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <div class="lg:col-span-1 bg-white p-4 sm:p-6 rounded-xl shadow-lg flex flex-col h-full">
+                <h3 class="text-2xl font-bold text-indigo-700 mb-6 border-b pb-3">New Sale</h3>
+
+                <div class="mb-4">
+                    <input type="text" id="product-search" placeholder="Search product name or price..." class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                
+                <form id="add-item-form" class="space-y-4 flex-shrink-0 border-b pb-4 mb-4">
+                    <input type="hidden" id="selected-product-id" value="">
+                    
+                    <p class="text-lg font-semibold text-gray-800">
+                        Selected: <span class="text-green-600" id="selected-product-info">None</span>
+                    </p>
+                    
+                    <div class="flex flex-col space-y-2">
+                        <label for="sale-quantity" class="text-sm font-medium text-gray-700">Quantity</label>
+                        <input type="number" id="sale-quantity" value="1" min="0.5" step="0.5" required disabled class="p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-gray-100">
+                    </div>
+
+                    <button type="submit" id="add-to-sale-btn" disabled class="w-full px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition duration-150 disabled:bg-gray-400">
+                        Add to Sale
+                    </button>
+                </form>
+                <div id="product-list-container" class="flex-grow overflow-y-auto space-y-2 pr-2">
+                    <p class="text-center text-gray-500 italic">Loading products...</p>
+                </div>
+                
+            </div>
+
+            <div class="lg:col-span-2 bg-white p-4 sm:p-6 rounded-xl shadow-lg flex flex-col">
+                <h3 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-3">Current Sale Cart</h3>
+                
+                <div class="flex-grow overflow-x-auto overflow-y-auto rounded-lg shadow-md border border-gray-100 mb-6">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-indigo-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Price/Unit</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sale-table-body" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="5" class="text-center py-8 text-gray-500 italic">No items added to sale yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flex flex-col sm:flex-row justify-between items-center p-4 bg-indigo-50 rounded-lg border border-indigo-200 font-bold text-lg">
+                    <div class="mb-2 sm:mb-0">
+                        <span>Total Items: <span id="total-items" class="text-indigo-700">0</span></span>
+                    </div>
+                    <div>
+                        <span>TOTAL: <span id="total-price" class="text-3xl text-green-600 font-extrabold font-mono">GHS 0.00</span></span>
+                    </div>
+                </div>
+
+                <div class="mt-4 flex flex-col sm:flex-row gap-4">
+                    <button id="complete-sale-btn" disabled class="flex-1 px-6 py-3 bg-indigo-600 text-white font-extrabold rounded-lg shadow-xl hover:bg-indigo-700 transition duration-150 disabled:bg-gray-400 disabled:shadow-none">
+                        Complete Sale
+                    </button>
+                    <button id="cancel-sale-btn" disabled class="flex-1 px-6 py-3 bg-red-500 text-white font-semibold rounded-lg shadow-md hover:bg-red-600 transition duration-150 disabled:bg-gray-400 disabled:shadow-none">
+                        Cancel Sale
+                    </button>
+                </div>
+
+            </div>
+
+        </main>
+
+        <footer class="mt-6 text-center text-sm text-gray-500 border-t pt-4">
+            Fast Forward Manager © 2025. All rights reserved.
+        </footer>
+    </div>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // --- STATE MANAGEMENT ---
+        let allProducts = [];
+        let currentSale = [];
+        let selectedProduct = null; 
+
+        // --- DOM ELEMENTS ---
+        const productSearchInput = document.getElementById('product-search');
+        const productListContainer = document.getElementById('product-list-container');
+        const selectedProductInfoEl = document.getElementById('selected-product-info');
+        const selectedProductIdInput = document.getElementById('selected-product-id');
+
+        const quantityInput = document.getElementById('sale-quantity');
+        const addItemForm = document.getElementById('add-item-form');
+        const addToSaleBtn = document.getElementById('add-to-sale-btn');
+
+        const saleTableBody = document.getElementById('sale-table-body');
+        
+        const totalItemsEl = document.getElementById('total-items');
+        const totalPriceEl = document.getElementById('total-price');
+        const completeSaleBtn = document.getElementById('complete-sale-btn');
+        const cancelSaleBtn = document.getElementById('cancel-sale-btn');
+
+        // --- DATA FETCHING ---
+        async function fetchProducts() {
+            try {
+                const response = await fetch("get_products");
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                
+                allProducts = data.products || [];
+                renderProductList(allProducts); 
+            } catch (error) {
+                console.error("Failed to fetch products:", error);
+                productListContainer.innerHTML = '<p class="text-center text-red-500 italic">Error loading products. Check server logs.</p>';
+            }
+        }
+
+        // --- UI RENDERING & UPDATES ---
+        
+        function renderProductList(productsToRender) {
+            productListContainer.innerHTML = ''; 
+
+            if (productsToRender.length === 0) {
+                productListContainer.innerHTML = '<p class="text-center text-gray-500 italic">No products found matching your search.</p>';
+                return;
+            }
+
+            productsToRender.forEach(p => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'product-item p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-indigo-50 transition duration-150';
+                itemDiv.dataset.productId = p.id;
+                
+                if (selectedProduct && selectedProduct.id === p.id) {
+                    itemDiv.classList.add('selected');
+                }
+
+                const price = typeof p.price === 'number' ? p.price : parseFloat(p.price);
+                const stockStatus = p.stock > 0 ? `<span class="text-green-600 font-semibold">${p.stock} in Stock</span>` : `<span class="text-red-600 font-semibold">OUT OF STOCK</span>`;
+
+                itemDiv.innerHTML = `
+                    <p class="font-bold text-gray-900">${p.name}</p>
+                    <div class="flex justify-between items-center text-sm mt-1">
+                        <span class="text-indigo-600 font-mono">GHS ${price.toFixed(2)}</span>
+                        ${stockStatus}
+                    </div>
+                `;
+                productListContainer.appendChild(itemDiv);
+            });
+        }
+        
+        function selectProduct(productId) {
+            const product = allProducts.find(p => p.id === productId);
+
+            if (product) {
+                selectedProduct = product;
+                selectedProductIdInput.value = product.id;
+                selectedProductInfoEl.textContent = `${product.name} (GHS ${parseFloat(product.price).toFixed(2)})`;
+                
+                quantityInput.disabled = false;
+                quantityInput.max = product.stock;
+                quantityInput.value = product.stock > 0 ? 1 : 0;
+                addToSaleBtn.disabled = product.stock === 0;
+
+                document.querySelectorAll('.product-item').forEach(item => {
+                    item.classList.remove('selected');
+                });
+                const selectedEl = document.querySelector(`.product-item[data-product-id="${productId}"]`);
+                if (selectedEl) {
+                    selectedEl.classList.add('selected');
+                }
+
+            } else {
+                selectedProduct = null;
+                selectedProductIdInput.value = '';
+                selectedProductInfoEl.textContent = 'None';
+                quantityInput.disabled = true;
+                quantityInput.max = null;
+                quantityInput.value = 1;
+                addToSaleBtn.disabled = true;
+                document.querySelectorAll('.product-item').forEach(item => item.classList.remove('selected'));
+            }
+        }
+
+        function renderSaleTable() {
+            saleTableBody.innerHTML = ''; 
+
+            if (currentSale.length === 0) {
+                saleTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-gray-500 italic">No items added to sale yet.</td></tr>';
+                return;
+            }
+
+            currentSale.forEach((item, index) => {
+                const price = typeof item.price === 'number' ? item.price : parseFloat(item.price);
+                const subtotal = item.quantity * price;
+                const row = saleTableBody.insertRow();
+                row.className = 'hover:bg-gray-50';
+
+                row.innerHTML = `
+                    <td class="px-6 py-4 text-sm font-medium text-gray-900">${item.name}</td>
+                    <td class="px-6 py-4 text-sm text-center text-gray-700">${item.quantity}</td>
+                    <td class="px-6 py-4 text-sm text-right text-gray-700 font-mono">GHS ${price.toFixed(2)}</td>
+                    <td class="px-6 py-4 text-sm text-right font-bold text-indigo-600 font-mono">GHS ${subtotal.toFixed(2)}</td>
+                    <td class="px-6 py-4 text-center">
+                        <button class="text-red-600 hover:text-red-900 font-semibold" data-index="${index}">Remove</button>
+                    </td>
+                `;
+            });
+        }
+
+        function updateSummary() {
+            const totalItems = currentSale.reduce((sum, item) => sum + parseFloat(item.quantity), 0);
+            const totalPrice = currentSale.reduce((sum, item) => sum + (parseFloat(item.quantity) * parseFloat(item.price)), 0);
+            
+            totalItemsEl.textContent = totalItems;
+            totalPriceEl.textContent = `GHS ${totalPrice.toFixed(2)}`;
+
+            const saleHasItems = currentSale.length > 0;
+            completeSaleBtn.disabled = !saleHasItems;
+            cancelSaleBtn.disabled = !saleHasItems;
+        }
+
+        function resetSale() {
+            currentSale = [];
+            selectedProduct = null;
+            renderSaleTable();
+            updateSummary();
+            selectProduct(null); 
+            renderProductList(allProducts); 
+            productSearchInput.value = ''; 
+        }
+        
+        // --- EVENT HANDLERS ---
+
+        // 1. Search Filtering (This is Request 1 - already working)
+        productSearchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase().trim();
+            const filteredProducts = allProducts.filter(p => {
+                const priceString = parseFloat(p.price).toFixed(2);
+                return p.name.toLowerCase().includes(searchTerm) || priceString.includes(searchTerm);
+            });
+            renderProductList(filteredProducts);
+        });
+
+        // 2. Product Selection
+        productListContainer.addEventListener('click', function(e) {
+            let target = e.target;
+            while (target && !target.classList.contains('product-item')) {
+                target = target.parentElement;
+            }
+            if (target && target.dataset.productId) {
+                const productId = parseInt(target.dataset.productId);
+                selectProduct(productId);
+            }
+        });
+
+        // 3. Add to Sale
+        addItemForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const productId = parseInt(selectedProductIdInput.value);
+            const quantity = parseFloat(quantityInput.value);
+            if (!selectedProduct || isNaN(quantity) || quantity < 0.5 || selectedProduct.id !== productId) {
+                alert('Please select a product and enter a valid quantity (minimum 0.5).');
+                return;
+            }
+            if (quantity > selectedProduct.stock) {
+                alert(`Error: Cannot sell ${quantity} units. Only ${selectedProduct.stock} available in stock.`);
+                return;
+            }
+            const price = typeof selectedProduct.price === 'number' ? selectedProduct.price : parseFloat(selectedProduct.price);
+            const existingItemIndex = currentSale.findIndex(item => item.id === productId);
+
+            if (existingItemIndex !== -1) {
+                const newQuantity = currentSale[existingItemIndex].quantity + quantity;
+                if (newQuantity > selectedProduct.stock) {
+                    alert(`Error: Adding ${quantity} units would exceed the maximum stock of ${selectedProduct.stock}.`);
+                    return;
+                }
+                currentSale[existingItemIndex].quantity = newQuantity;
+            } else {
+                currentSale.push({ id: selectedProduct.id, name: selectedProduct.name, price: price, quantity: quantity });
+            }
+            renderSaleTable();
+            updateSummary();
+            quantityInput.value = 1;
+        });
+        
+        // 4. Remove from Sale
+        saleTableBody.addEventListener('click', function(e) {
+            if (e.target.tagName === 'BUTTON' && e.target.dataset.index) {
+                const indexToRemove = parseInt(e.target.dataset.index);
+                currentSale.splice(indexToRemove, 1);
+                renderSaleTable();
+                updateSummary();
+            }
+        });
+
+        // 5. Cancel Sale
+        cancelSaleBtn.addEventListener('click', function() {
+            if (confirm('Are you sure you want to cancel this entire sale?')) {
+                resetSale();
+            }
+        });
+
+        // 6. Complete Sale
+        completeSaleBtn.addEventListener('click', async function() {
+            if (!confirm('Are you sure you want to complete this sale? This will update the stock levels.')) {
+                return;
+            }
+            try {
+                const response = await fetch("record_sale", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: currentSale })
+                });
+                const data = await response.json();
+                if (response.ok && data.status === 'success') {
+                    window.location.reload(); 
+                } else {
+                    alert(`Error: ${data.message || 'Could not complete the sale.'}`);
+                }
+            } catch (error) {
+                console.error('Sale completion error:', error);
+                alert('A network error occurred. Please try again.');
+            }
+        });
+
+        // --- INITIALIZATION ---
+        fetchProducts();
+
+        // --- CHANGE 3.6: UPDATED SIDEBAR SCRIPT ---
+        const sidebar = document.getElementById('sidebar');
+        const hamburger = document.getElementById('hamburger');
+        
+        hamburger.addEventListener('click', () => {
+            sidebar.classList.toggle('sidebar-hidden');
+            sidebar.classList.toggle('sidebar-visible');
+        });
+
+        // Set initial state on load
+        if (window.innerWidth >= 1024) {
+            // On desktop, start visible
+            sidebar.classList.add('sidebar-visible');
+            sidebar.classList.remove('sidebar-hidden');
+        } else {
+            // On mobile, start hidden
+            sidebar.classList.add('sidebar-hidden');
+            sidebar.classList.remove('sidebar-visible');
+        }
+    });
+</script>
+   
+    
+</body>
+</html>
