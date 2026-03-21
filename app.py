@@ -1,6 +1,5 @@
 import os
 import json
-import sqlite3
 from datetime import date
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
@@ -30,11 +29,13 @@ def register():
         hashed_password = generate_password_hash(password)
         conn = get_db_connection()
         try:
-            conn.execute('INSERT INTO users (username, password) VALUES (?, ?)', (username, hashed_password))
+            cursor = conn.cursor()
+            cursor.execute('INSERT INTO users (username, password) VALUES (%s, %s)', (username, hashed_password))
             conn.commit()
             flash('Registration successful! Please log in.', 'success')
             return redirect(url_for('login'))
-        except sqlite3.IntegrityError:
+        except Exception:
+            conn.rollback()
             flash('Username already exists. Please choose a different one.', 'danger')
         finally:
             conn.close()
@@ -46,7 +47,9 @@ def login():
         username = request.form['username'].strip()
         password = request.form['password']
         conn = get_db_connection()
-        user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM users WHERE username = %s', (username,))
+        user = cursor.fetchone()
         conn.close()
         if user and check_password_hash(user['password'], password):
             session['user_id'] = user['id']
@@ -73,17 +76,17 @@ def index():
 def dashboard():
     user_id = session['user_id']
     conn = get_db_connection()
-    total_items = conn.execute('SELECT COUNT(*) FROM stock WHERE user_id = ?', (user_id,)).fetchone()[0]
-    total_quantity = conn.execute('SELECT SUM(quantity) FROM stock WHERE user_id = ?', (user_id,)).fetchone()[0] or 0.0
-    total_profit_potential = 0.0
-    try:
-        result = conn.execute(
-            'SELECT SUM((selling_price - unit_cost) * quantity) FROM stock WHERE user_id = ? AND quantity > 0',
-            (user_id,)
-        ).fetchone()[0]
-        total_profit_potential = result or 0.0
-    except sqlite3.OperationalError:
-        pass
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM stock WHERE user_id = %s', (user_id,))
+    total_items = cursor.fetchone()['count']
+    cursor.execute('SELECT SUM(quantity) FROM stock WHERE user_id = %s', (user_id,))
+    total_quantity = cursor.fetchone()['sum'] or 0.0
+    cursor.execute(
+        'SELECT SUM((selling_price - unit_cost) * quantity) FROM stock WHERE user_id = %s AND quantity > 0',
+        (user_id,)
+    )
+    result = cursor.fetchone()['sum']
+    total_profit_potential = result or 0.0
     conn.close()
     return render_template('dashboard.html', total_items=total_items, total_quantity=total_quantity, total_profit_potential=total_profit_potential)
 
@@ -92,13 +95,13 @@ def dashboard():
 def get_products():
     user_id = session['user_id']
     conn = get_db_connection()
-    try:
-        rows = conn.execute(
-            'SELECT id, item_name, quantity, unit_cost, selling_price FROM stock WHERE user_id = ? AND quantity > 0 ORDER BY item_name',
-            (user_id,)
-        ).fetchall()
-    finally:
-        conn.close()
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT id, item_name, quantity, unit_cost, selling_price FROM stock WHERE user_id = %s AND quantity > 0 ORDER BY item_name',
+        (user_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
     products = [{'id': r['id'], 'name': r['item_name'], 'stock': r['quantity'],
                  'price': r['selling_price'], 'cost': r['unit_cost']} for r in rows]
     return jsonify({'products': products})
@@ -112,6 +115,7 @@ def record_sale():
     if not items:
         return jsonify({'status': 'error', 'message': 'No items in sale.'}), 400
     conn = get_db_connection()
+    cursor = conn.cursor()
     try:
         total_amount = 0.0
         items_sold_details = []
@@ -119,17 +123,18 @@ def record_sale():
             item_id = item['id']
             qty_sold = float(item['quantity'])
             price = float(item['price'])
-            row = conn.execute('SELECT quantity, item_name FROM stock WHERE id = ? AND user_id = ?', (item_id, user_id)).fetchone()
+            cursor.execute('SELECT quantity, item_name FROM stock WHERE id = %s AND user_id = %s', (item_id, user_id))
+            row = cursor.fetchone()
             if not row:
                 return jsonify({'status': 'error', 'message': f'Item ID {item_id} not found.'}), 400
             if row['quantity'] < qty_sold:
                 return jsonify({'status': 'error', 'message': f'Not enough stock for "{row["item_name"]}".'}), 400
-            conn.execute('UPDATE stock SET quantity = quantity - ? WHERE id = ? AND user_id = ?', (qty_sold, item_id, user_id))
+            cursor.execute('UPDATE stock SET quantity = quantity - %s WHERE id = %s AND user_id = %s', (qty_sold, item_id, user_id))
             subtotal = qty_sold * price
             total_amount += subtotal
             items_sold_details.append({'name': row['item_name'], 'qty': qty_sold, 'price': price, 'subtotal': subtotal})
         today = date.today().isoformat()
-        conn.execute('INSERT INTO sales (user_id, total_amount, sale_date, items_sold) VALUES (?, ?, ?, ?)',
+        cursor.execute('INSERT INTO sales (user_id, total_amount, sale_date, items_sold) VALUES (%s, %s, %s, %s)',
                      (user_id, total_amount, today, json.dumps(items_sold_details)))
         conn.commit()
         return jsonify({'status': 'success', 'total': total_amount})
@@ -144,17 +149,16 @@ def record_sale():
 def stock():
     user_id = session['user_id']
     conn = get_db_connection()
+    cursor = conn.cursor()
     if request.method == 'POST':
-        # Handle Delete
         delete_id = request.form.get('delete_id')
         if delete_id:
-            conn.execute('DELETE FROM stock WHERE id = ? AND user_id = ?', (delete_id, user_id))
+            cursor.execute('DELETE FROM stock WHERE id = %s AND user_id = %s', (delete_id, user_id))
             conn.commit()
             flash('Item deleted successfully.', 'success')
             conn.close()
             return redirect(url_for('stock'))
 
-        # Handle Edit
         edit_id = request.form.get('edit_id')
         if edit_id:
             item_name = request.form.get('item_name', '').strip()
@@ -165,8 +169,8 @@ def stock():
                 flash('Values cannot be negative.', 'danger')
                 conn.close()
                 return redirect(url_for('stock'))
-            conn.execute(
-                'UPDATE stock SET item_name=?, quantity=?, unit_cost=?, selling_price=? WHERE id=? AND user_id=?',
+            cursor.execute(
+                'UPDATE stock SET item_name=%s, quantity=%s, unit_cost=%s, selling_price=%s WHERE id=%s AND user_id=%s',
                 (item_name, quantity, unit_cost, selling_price, edit_id, user_id)
             )
             conn.commit()
@@ -174,7 +178,6 @@ def stock():
             conn.close()
             return redirect(url_for('stock'))
 
-        # Handle Add / Replenish
         item_name = request.form.get('item_name', '').strip()
         quantity = float(request.form.get('quantity', 0))
         unit_cost = float(request.form.get('unit_cost', 0))
@@ -185,40 +188,33 @@ def stock():
             conn.close()
             return redirect(url_for('stock'))
 
-        existing = conn.execute(
-            'SELECT id, quantity FROM stock WHERE user_id=? AND item_name=?',
+        cursor.execute(
+            'SELECT id, quantity FROM stock WHERE user_id=%s AND item_name=%s',
             (user_id, item_name)
-        ).fetchone()
+        )
+        existing = cursor.fetchone()
 
         if existing:
-            # On replenish: update quantity, and update both cost and selling price
-            conn.execute(
-                'UPDATE stock SET quantity=?, unit_cost=?, selling_price=? WHERE id=? AND user_id=?',
+            cursor.execute(
+                'UPDATE stock SET quantity=%s, unit_cost=%s, selling_price=%s WHERE id=%s AND user_id=%s',
                 (existing['quantity'] + quantity, unit_cost, selling_price, existing['id'], user_id)
             )
             flash(f'Stock replenished for "{item_name}".', 'success')
         else:
-            conn.execute(
-                'INSERT INTO stock (user_id, item_name, quantity, unit_cost, selling_price) VALUES (?,?,?,?,?)',
+            cursor.execute(
+                'INSERT INTO stock (user_id, item_name, quantity, unit_cost, selling_price) VALUES (%s,%s,%s,%s,%s)',
                 (user_id, item_name, quantity, unit_cost, selling_price)
             )
             flash(f'New item "{item_name}" added to stock.', 'success')
         conn.commit()
 
-    try:
-        stock_items = conn.execute(
-            'SELECT id, item_name, quantity, unit_cost, selling_price FROM stock WHERE user_id=? ORDER BY item_name',
-            (user_id,)
-        ).fetchall()
-    except sqlite3.OperationalError:
-        stock_items = conn.execute(
-            'SELECT id, item_name, quantity, 0 as unit_cost, 0 as selling_price FROM stock WHERE user_id=? ORDER BY item_name',
-            (user_id,)
-        ).fetchall()
-
+    cursor.execute(
+        'SELECT id, item_name, quantity, unit_cost, selling_price FROM stock WHERE user_id=%s ORDER BY item_name',
+        (user_id,)
+    )
+    stock_items = cursor.fetchall()
     total_inventory_value = sum(item['quantity'] * item['selling_price'] for item in stock_items)
     total_units = sum(item['quantity'] for item in stock_items)
-
     conn.close()
     return render_template('Stock.html', stock=stock_items,
                            total_inventory_value=total_inventory_value,
@@ -229,10 +225,9 @@ def stock():
 def profit_accumulator():
     user_id = session['user_id']
     conn = get_db_connection()
-    try:
-        stock_data = conn.execute('SELECT id, item_name, quantity, unit_cost, selling_price FROM stock WHERE user_id=? ORDER BY item_name', (user_id,)).fetchall()
-    except sqlite3.OperationalError:
-        stock_data = conn.execute('SELECT id, item_name, quantity, unit_cost, 0 as selling_price FROM stock WHERE user_id=? ORDER BY item_name', (user_id,)).fetchall()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, item_name, quantity, unit_cost, selling_price FROM stock WHERE user_id=%s ORDER BY item_name', (user_id,))
+    stock_data = cursor.fetchall()
     conn.close()
     inventory_analysis = []
     total_potential_profit = 0.0
@@ -252,7 +247,8 @@ def profit_accumulator():
 def update_selling_price():
     user_id = session['user_id']
     conn = get_db_connection()
-    conn.execute('UPDATE stock SET selling_price=? WHERE id=? AND user_id=?',
+    cursor = conn.cursor()
+    cursor.execute('UPDATE stock SET selling_price=%s WHERE id=%s AND user_id=%s',
                  (float(request.form.get('selling_price', 0)), request.form.get('id'), user_id))
     conn.commit()
     conn.close()
@@ -268,7 +264,8 @@ def update_original_cost():
         flash('Cost cannot be negative.', 'danger')
         return redirect(url_for('profit_accumulator'))
     conn = get_db_connection()
-    conn.execute('UPDATE stock SET unit_cost=? WHERE id=? AND user_id=?',
+    cursor = conn.cursor()
+    cursor.execute('UPDATE stock SET unit_cost=%s WHERE id=%s AND user_id=%s',
                  (new_cost, request.form.get('id'), user_id))
     conn.commit()
     conn.close()
@@ -280,6 +277,7 @@ def update_original_cost():
 def payables():
     user_id = session['user_id']
     conn = get_db_connection()
+    cursor = conn.cursor()
     if request.method == 'POST':
         pid = request.form.get('id', '').strip()
         supplier = request.form.get('supplier', '').strip()
@@ -290,23 +288,25 @@ def payables():
             conn.close()
             return redirect(url_for('payables'))
         if pid:
-            conn.execute('UPDATE payables SET supplier=?, remaining_amount=?, due_date=? WHERE id=? AND user_id=?',
+            cursor.execute('UPDATE payables SET supplier=%s, remaining_amount=%s, due_date=%s WHERE id=%s AND user_id=%s',
                          (supplier, amount, tx_date, pid, user_id))
             flash('Payable updated.', 'success')
         else:
-            conn.execute('INSERT INTO payables (user_id, supplier, original_amount, remaining_amount, due_date) VALUES (?,?,?,?,?)',
+            cursor.execute('INSERT INTO payables (user_id, supplier, original_amount, remaining_amount, due_date) VALUES (%s,%s,%s,%s,%s)',
                          (user_id, supplier, amount, amount, tx_date))
             flash('Payable recorded.', 'success')
         conn.commit()
         conn.close()
         return redirect(url_for('payables'))
-    rows = conn.execute('SELECT id, supplier, original_amount, remaining_amount, due_date FROM payables WHERE user_id=? ORDER BY due_date DESC', (user_id,)).fetchall()
+    cursor.execute('SELECT id, supplier, original_amount, remaining_amount, due_date FROM payables WHERE user_id=%s ORDER BY due_date DESC', (user_id,))
+    rows = cursor.fetchall()
     payables_list = []
     cleared_payables_list = []
     total_payables_calc = 0.0
     for r in rows:
         rem = r['remaining_amount']
-        latest = conn.execute('SELECT MAX(transaction_date) as latest FROM transactions WHERE payable_id=?', (r['id'],)).fetchone()
+        cursor.execute('SELECT MAX(transaction_date) as latest FROM transactions WHERE payable_id=%s', (r['id'],))
+        latest = cursor.fetchone()
         display_date = latest['latest'] if latest and latest['latest'] else r['due_date']
         if rem > 0.005:
             total_payables_calc += rem
@@ -324,8 +324,9 @@ def delete_Payables():
     user_id = session['user_id']
     pid = request.form.get('id')
     conn = get_db_connection()
-    conn.execute('DELETE FROM transactions WHERE payable_id=?', (pid,))
-    conn.execute('DELETE FROM payables WHERE id=? AND user_id=?', (pid, user_id))
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM transactions WHERE payable_id=%s', (pid,))
+    cursor.execute('DELETE FROM payables WHERE id=%s AND user_id=%s', (pid, user_id))
     conn.commit()
     conn.close()
     flash('Payable deleted.', 'success')
@@ -336,6 +337,7 @@ def delete_Payables():
 def receivables():
     user_id = session['user_id']
     conn = get_db_connection()
+    cursor = conn.cursor()
     if request.method == 'POST':
         rid = request.form.get('id', '').strip()
         customer = request.form.get('customer', '').strip()
@@ -346,23 +348,25 @@ def receivables():
             conn.close()
             return redirect(url_for('receivables'))
         if rid:
-            conn.execute('UPDATE receivables SET customer=?, remaining_amount=?, due_date=? WHERE id=? AND user_id=?',
+            cursor.execute('UPDATE receivables SET customer=%s, remaining_amount=%s, due_date=%s WHERE id=%s AND user_id=%s',
                          (customer, amount, tx_date, rid, user_id))
             flash('Receivable updated.', 'success')
         else:
-            conn.execute('INSERT INTO receivables (user_id, customer, original_amount, remaining_amount, due_date) VALUES (?,?,?,?,?)',
+            cursor.execute('INSERT INTO receivables (user_id, customer, original_amount, remaining_amount, due_date) VALUES (%s,%s,%s,%s,%s)',
                          (user_id, customer, amount, amount, tx_date))
             flash('Receivable recorded.', 'success')
         conn.commit()
         conn.close()
         return redirect(url_for('receivables'))
-    rows = conn.execute('SELECT id, customer, original_amount, remaining_amount, due_date FROM receivables WHERE user_id=? ORDER BY due_date DESC', (user_id,)).fetchall()
+    cursor.execute('SELECT id, customer, original_amount, remaining_amount, due_date FROM receivables WHERE user_id=%s ORDER BY due_date DESC', (user_id,))
+    rows = cursor.fetchall()
     receivables_list = []
     cleared_receivables_list = []
     total_receivables_calc = 0.0
     for r in rows:
         rem = r['remaining_amount']
-        latest = conn.execute('SELECT MAX(transaction_date) as latest FROM transactions WHERE receivable_id=?', (r['id'],)).fetchone()
+        cursor.execute('SELECT MAX(transaction_date) as latest FROM transactions WHERE receivable_id=%s', (r['id'],))
+        latest = cursor.fetchone()
         display_date = latest['latest'] if latest and latest['latest'] else r['due_date']
         if rem > 0.005:
             total_receivables_calc += rem
@@ -380,8 +384,9 @@ def delete_Receivables():
     user_id = session['user_id']
     rid = request.form.get('id')
     conn = get_db_connection()
-    conn.execute('DELETE FROM transactions WHERE receivable_id=?', (rid,))
-    conn.execute('DELETE FROM receivables WHERE id=? AND user_id=?', (rid, user_id))
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM transactions WHERE receivable_id=%s', (rid,))
+    cursor.execute('DELETE FROM receivables WHERE id=%s AND user_id=%s', (rid, user_id))
     conn.commit()
     conn.close()
     flash('Receivable deleted.', 'success')
@@ -401,22 +406,25 @@ def add_transaction():
     if amount <= 0:
         return jsonify({'status': 'error', 'message': 'Amount must be positive.'}), 400
     conn = get_db_connection()
+    cursor = conn.cursor()
     try:
         if entity_type == 'payable':
-            row = conn.execute('SELECT remaining_amount FROM payables WHERE id=? AND user_id=?', (entity_id, user_id)).fetchone()
+            cursor.execute('SELECT remaining_amount FROM payables WHERE id=%s AND user_id=%s', (entity_id, user_id))
+            row = cursor.fetchone()
             if not row: return jsonify({'status': 'error', 'message': 'Not found.'}), 404
             new_bal = (row['remaining_amount'] - amount) if tx_type == 'payment' else (row['remaining_amount'] + amount)
-            conn.execute('UPDATE payables SET remaining_amount=? WHERE id=?', (new_bal, entity_id))
+            cursor.execute('UPDATE payables SET remaining_amount=%s WHERE id=%s', (new_bal, entity_id))
             signed = amount if tx_type == 'payment' else -amount
-            conn.execute('INSERT INTO transactions (user_id, payable_id, amount, transaction_date, description) VALUES (?,?,?,?,?)',
+            cursor.execute('INSERT INTO transactions (user_id, payable_id, amount, transaction_date, description) VALUES (%s,%s,%s,%s,%s)',
                          (user_id, entity_id, signed, tx_date, description))
         else:
-            row = conn.execute('SELECT remaining_amount FROM receivables WHERE id=? AND user_id=?', (entity_id, user_id)).fetchone()
+            cursor.execute('SELECT remaining_amount FROM receivables WHERE id=%s AND user_id=%s', (entity_id, user_id))
+            row = cursor.fetchone()
             if not row: return jsonify({'status': 'error', 'message': 'Not found.'}), 404
             new_bal = (row['remaining_amount'] - amount) if tx_type == 'payment' else (row['remaining_amount'] + amount)
-            conn.execute('UPDATE receivables SET remaining_amount=? WHERE id=?', (new_bal, entity_id))
+            cursor.execute('UPDATE receivables SET remaining_amount=%s WHERE id=%s', (new_bal, entity_id))
             signed = amount if tx_type == 'payment' else -amount
-            conn.execute('INSERT INTO transactions (user_id, receivable_id, amount, transaction_date, description) VALUES (?,?,?,?,?)',
+            cursor.execute('INSERT INTO transactions (user_id, receivable_id, amount, transaction_date, description) VALUES (%s,%s,%s,%s,%s)',
                          (user_id, entity_id, signed, tx_date, description))
         conn.commit()
         return jsonify({'status': 'success'})
@@ -431,12 +439,17 @@ def add_transaction():
 def history(entity_type, entity_id):
     user_id = session['user_id']
     conn = get_db_connection()
+    cursor = conn.cursor()
     if entity_type == 'payable':
-        entity = conn.execute('SELECT supplier as name, original_amount, remaining_amount FROM payables WHERE id=? AND user_id=?', (entity_id, user_id)).fetchone()
-        txs = conn.execute('SELECT id, amount, transaction_date, description FROM transactions WHERE payable_id=? ORDER BY transaction_date ASC', (entity_id,)).fetchall()
+        cursor.execute('SELECT supplier as name, original_amount, remaining_amount FROM payables WHERE id=%s AND user_id=%s', (entity_id, user_id))
+        entity = cursor.fetchone()
+        cursor.execute('SELECT id, amount, transaction_date, description FROM transactions WHERE payable_id=%s ORDER BY transaction_date ASC', (entity_id,))
+        txs = cursor.fetchall()
     else:
-        entity = conn.execute('SELECT customer as name, original_amount, remaining_amount FROM receivables WHERE id=? AND user_id=?', (entity_id, user_id)).fetchone()
-        txs = conn.execute('SELECT id, amount, transaction_date, description FROM transactions WHERE receivable_id=? ORDER BY transaction_date ASC', (entity_id,)).fetchall()
+        cursor.execute('SELECT customer as name, original_amount, remaining_amount FROM receivables WHERE id=%s AND user_id=%s', (entity_id, user_id))
+        entity = cursor.fetchone()
+        cursor.execute('SELECT id, amount, transaction_date, description FROM transactions WHERE receivable_id=%s ORDER BY transaction_date ASC', (entity_id,))
+        txs = cursor.fetchall()
     conn.close()
     if not entity: return jsonify({'error': 'Not found'}), 404
     history_list = []
@@ -460,15 +473,17 @@ def delete_transaction():
     data = request.get_json()
     tx_id = int(data.get('transaction_id'))
     conn = get_db_connection()
+    cursor = conn.cursor()
     try:
-        tx = conn.execute('SELECT * FROM transactions WHERE id=? AND user_id=?', (tx_id, user_id)).fetchone()
+        cursor.execute('SELECT * FROM transactions WHERE id=%s AND user_id=%s', (tx_id, user_id))
+        tx = cursor.fetchone()
         if not tx: return jsonify({'status': 'error', 'message': 'Not found.'}), 404
         amt = tx['amount']
         if tx['payable_id']:
-            conn.execute('UPDATE payables SET remaining_amount = remaining_amount + ? WHERE id=?', (amt, tx['payable_id']))
+            cursor.execute('UPDATE payables SET remaining_amount = remaining_amount + %s WHERE id=%s', (amt, tx['payable_id']))
         elif tx['receivable_id']:
-            conn.execute('UPDATE receivables SET remaining_amount = remaining_amount + ? WHERE id=?', (amt, tx['receivable_id']))
-        conn.execute('DELETE FROM transactions WHERE id=?', (tx_id,))
+            cursor.execute('UPDATE receivables SET remaining_amount = remaining_amount + %s WHERE id=%s', (amt, tx['receivable_id']))
+        cursor.execute('DELETE FROM transactions WHERE id=%s', (tx_id,))
         conn.commit()
         return jsonify({'status': 'success'})
     except Exception as e:
@@ -482,6 +497,7 @@ def delete_transaction():
 def expenses():
     user_id = session['user_id']
     conn = get_db_connection()
+    cursor = conn.cursor()
     if request.method == 'POST':
         description = request.form.get('description', '').strip()
         expense_date = request.form.get('expense_date', '')
@@ -490,13 +506,14 @@ def expenses():
             flash('All fields are required.', 'danger')
             conn.close()
             return redirect(url_for('expenses'))
-        conn.execute('INSERT INTO expenses (user_id, description, expense_date, amount) VALUES (?,?,?,?)',
+        cursor.execute('INSERT INTO expenses (user_id, description, expense_date, amount) VALUES (%s,%s,%s,%s)',
                      (user_id, description, expense_date, amount))
         conn.commit()
         flash('Expense recorded.', 'success')
         conn.close()
         return redirect(url_for('expenses'))
-    rows = conn.execute('SELECT id, description, expense_date, amount FROM expenses WHERE user_id=? ORDER BY expense_date DESC', (user_id,)).fetchall()
+    cursor.execute('SELECT id, description, expense_date, amount FROM expenses WHERE user_id=%s ORDER BY expense_date DESC', (user_id,))
+    rows = cursor.fetchall()
     conn.close()
     expenses_list = [dict(r) for r in rows]
     total_expenses = sum(e['amount'] for e in expenses_list)
@@ -507,7 +524,8 @@ def expenses():
 def delete_expense():
     user_id = session['user_id']
     conn = get_db_connection()
-    conn.execute('DELETE FROM expenses WHERE id=? AND user_id=?', (request.form.get('id'), user_id))
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM expenses WHERE id=%s AND user_id=%s', (request.form.get('id'), user_id))
     conn.commit()
     conn.close()
     flash('Expense deleted.', 'success')
@@ -518,7 +536,9 @@ def delete_expense():
 def daily_sales_summary():
     user_id = session['user_id']
     conn = get_db_connection()
-    rows = conn.execute('SELECT id, total_amount, sale_date, items_sold FROM sales WHERE user_id=? ORDER BY sale_date DESC, id DESC', (user_id,)).fetchall()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, total_amount, sale_date, items_sold FROM sales WHERE user_id=%s ORDER BY sale_date DESC, id DESC', (user_id,))
+    rows = cursor.fetchall()
     conn.close()
     sales_list = []
     for r in rows:

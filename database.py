@@ -1,13 +1,12 @@
-import sqlite3
 import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from werkzeug.security import generate_password_hash
 
-DATABASE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
 def get_db_connection():
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     return conn
 
 def init_db():
@@ -16,7 +15,7 @@ def init_db():
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             username TEXT NOT NULL UNIQUE,
             password TEXT NOT NULL
         )
@@ -24,94 +23,77 @@ def init_db():
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS payables (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             supplier TEXT NOT NULL,
             original_amount REAL NOT NULL,
             remaining_amount REAL NOT NULL,
-            due_date TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            due_date TEXT NOT NULL
         )
     ''')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS receivables (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             customer TEXT NOT NULL,
             original_amount REAL NOT NULL,
             remaining_amount REAL NOT NULL,
-            due_date TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            due_date TEXT NOT NULL
         )
     ''')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS stock (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             item_name TEXT NOT NULL,
             quantity REAL NOT NULL,
             unit_cost REAL NOT NULL DEFAULT 0.0,
             selling_price REAL DEFAULT 0.0,
-            UNIQUE(user_id, item_name),
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            UNIQUE(user_id, item_name)
         )
     ''')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            payable_id INTEGER,
-            receivable_id INTEGER,
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            payable_id INTEGER REFERENCES payables(id) ON DELETE CASCADE,
+            receivable_id INTEGER REFERENCES receivables(id) ON DELETE CASCADE,
             amount REAL NOT NULL,
             transaction_date DATE NOT NULL,
-            description TEXT,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-            FOREIGN KEY (payable_id) REFERENCES payables (id) ON DELETE CASCADE,
-            FOREIGN KEY (receivable_id) REFERENCES receivables (id) ON DELETE CASCADE
+            description TEXT
         )
     ''')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sales (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             total_amount REAL NOT NULL,
             sale_date TEXT NOT NULL,
-            items_sold TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            items_sold TEXT NOT NULL
         )
     ''')
 
-    # FIX: Add expenses table (was missing entirely)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS expenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             description TEXT NOT NULL,
             expense_date TEXT NOT NULL,
-            amount REAL NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            amount REAL NOT NULL
         )
     ''')
 
-    # Add selling_price column to stock if it doesn't exist (for existing databases)
-    try:
-        cursor.execute('ALTER TABLE stock ADD COLUMN selling_price REAL DEFAULT 0.0')
-        conn.commit()
-        print("Added selling_price column to existing stock table.")
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-
-    # Default admin user
     hashed_password = generate_password_hash('password')
-    cursor.execute('INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)', ('admin', hashed_password))
+    cursor.execute('INSERT INTO users (username, password) VALUES (%s, %s) ON CONFLICT (username) DO NOTHING', ('admin', hashed_password))
 
     conn.commit()
+    cursor.close()
     conn.close()
-    print("Database initialized/updated successfully.")
+    print("Database initialized successfully.")
 
 if __name__ == '__main__':
     init_db()
