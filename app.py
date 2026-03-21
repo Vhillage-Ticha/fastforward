@@ -548,7 +548,26 @@ def daily_sales_summary():
             items = []
         sales_list.append({'id': r['id'], 'total_amount': r['total_amount'], 'sale_date': r['sale_date'], 'items': items})
     return render_template('daily_sales_summary.html', sales=sales_list)
+@app.route('/setup-db')
+def setup_db():
+    init_db()
+    return 'Database initialized successfully!'
+```
 
+Save the file, then push to GitHub:
+```
+git add .
+git commit -m "add db setup route"
+git push
+```
+
+Once deployed, visit:
+```
+https://fastforward-4tbi.onrender.com/setup-db
+@app.route('/setup-db')
+def setup_db():
+    init_db()
+    return 'Database initialized successfully!'
 if __name__ == '__main__':
     init_db()
     app.run(debug=True)
