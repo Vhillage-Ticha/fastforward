@@ -552,22 +552,7 @@ def daily_sales_summary():
 def setup_db():
     init_db()
     return 'Database initialized successfully!'
-```
 
-Save the file, then push to GitHub:
-```
-git add .
-git commit -m "add db setup route"
-git push
-```
-
-Once deployed, visit:
-```
-https://fastforward-4tbi.onrender.com/setup-db
-@app.route('/setup-db')
-def setup_db():
-    init_db()
-    return 'Database initialized successfully!'
 if __name__ == '__main__':
     init_db()
     app.run(debug=True)
