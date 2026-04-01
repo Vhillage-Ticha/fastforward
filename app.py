@@ -18,6 +18,18 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Please log in.', 'danger')
+            return redirect(url_for('login'))
+        if not session.get('is_admin', False):
+            flash('Access denied. Admins only.', 'danger')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     flash('Registration is by invitation only. Contact your administrator.', 'danger')
@@ -34,8 +46,12 @@ def login():
         user = cursor.fetchone()
         conn.close()
         if user and check_password_hash(user['password'], password):
+            if not user.get('is_active', True):
+                flash('Your account has been suspended. Please contact support.', 'danger')
+                return redirect(url_for('login'))
             session['user_id'] = user['id']
             session['username'] = user['username']
+            session['is_admin'] = user.get('is_admin', False)
             flash('Logged in successfully!', 'success')
             return redirect(url_for('dashboard'))
         else:
@@ -559,10 +575,125 @@ def daily_sales_summary():
             items = []
         sales_list.append({'id': r['id'], 'total_amount': r['total_amount'], 'sale_date': r['sale_date'], 'items': items})
     return render_template('daily_sales_summary.html', sales=sales_list)
+
 @app.route('/setup-db')
 def setup_db():
     init_db()
     return 'Database initialized successfully!'
+
+# ----------------------------------------------------------------
+# ADMIN PANEL ROUTES — accessible only to admin users
+# ----------------------------------------------------------------
+
+@app.route('/admin')
+@admin_required
+def admin_panel():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT id, username, is_active, is_admin FROM users ORDER BY is_admin DESC, username ASC'
+    )
+    users = [dict(u) for u in cursor.fetchall()]
+    conn.close()
+    return render_template('admin_panel.html', users=users)
+
+@app.route('/admin/create-user', methods=['POST'])
+@admin_required
+def admin_create_user():
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '').strip()
+    if not username or len(password) < 6:
+        flash('Username and a password of at least 6 characters are required.', 'danger')
+        return redirect(url_for('admin_panel'))
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        hashed = generate_password_hash(password)
+        cursor.execute(
+            'INSERT INTO users (username, password, is_active, is_admin) VALUES (%s, %s, TRUE, FALSE)',
+            (username, hashed)
+        )
+        conn.commit()
+        flash(f'User "{username}" created successfully. Share their temporary password securely.', 'success')
+    except Exception:
+        conn.rollback()
+        flash(f'Username "{username}" already exists. Choose a different one.', 'danger')
+    finally:
+        conn.close()
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/toggle-user', methods=['POST'])
+@admin_required
+def admin_toggle_user():
+    user_id = request.form.get('user_id')
+    action = request.form.get('action')
+    if action not in ('suspend', 'activate'):
+        flash('Invalid action.', 'danger')
+        return redirect(url_for('admin_panel'))
+    new_status = (action == 'activate')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT username FROM users WHERE id = %s', (user_id,))
+    user = cursor.fetchone()
+    if not user:
+        flash('User not found.', 'danger')
+        conn.close()
+        return redirect(url_for('admin_panel'))
+    cursor.execute('UPDATE users SET is_active = %s WHERE id = %s', (new_status, user_id))
+    conn.commit()
+    conn.close()
+    verb = 'reactivated' if new_status else 'suspended'
+    flash(f'User "{user["username"]}" has been {verb}.', 'success')
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/reset-password', methods=['POST'])
+@admin_required
+def admin_reset_password():
+    user_id = request.form.get('user_id')
+    new_password = request.form.get('new_password', '').strip()
+    if len(new_password) < 6:
+        flash('Password must be at least 6 characters.', 'danger')
+        return redirect(url_for('admin_panel'))
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT username FROM users WHERE id = %s', (user_id,))
+    user = cursor.fetchone()
+    if not user:
+        flash('User not found.', 'danger')
+        conn.close()
+        return redirect(url_for('admin_panel'))
+    cursor.execute(
+        'UPDATE users SET password = %s WHERE id = %s',
+        (generate_password_hash(new_password), user_id)
+    )
+    conn.commit()
+    conn.close()
+    flash(f'Password reset for "{user["username"]}". Share the new password securely.', 'success')
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/delete-user', methods=['POST'])
+@admin_required
+def admin_delete_user():
+    user_id = request.form.get('user_id')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT username, is_admin FROM users WHERE id = %s', (user_id,))
+    user = cursor.fetchone()
+    if not user:
+        flash('User not found.', 'danger')
+        conn.close()
+        return redirect(url_for('admin_panel'))
+    if user['is_admin']:
+        flash('Cannot delete an admin account.', 'danger')
+        conn.close()
+        return redirect(url_for('admin_panel'))
+    cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
+    conn.commit()
+    conn.close()
+    flash(f'User "{user["username"]}" and all their data have been permanently deleted.', 'success')
+    return redirect(url_for('admin_panel'))
+
+# ----------------------------------------------------------------
 
 if __name__ == '__main__':
     init_db()
