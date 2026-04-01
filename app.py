@@ -20,26 +20,8 @@ def login_required(f):
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    if request.method == 'POST':
-        username = request.form['username'].strip()
-        password = request.form['password']
-        if not username or not password:
-            flash('Username and password are required.', 'danger')
-            return redirect(url_for('register'))
-        hashed_password = generate_password_hash(password)
-        conn = get_db_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute('INSERT INTO users (username, password) VALUES (%s, %s)', (username, hashed_password))
-            conn.commit()
-            flash('Registration successful! Please log in.', 'success')
-            return redirect(url_for('login'))
-        except Exception:
-            conn.rollback()
-            flash('Username already exists. Please choose a different one.', 'danger')
-        finally:
-            conn.close()
-    return render_template('Register.html')
+    flash('Registration is by invitation only. Contact your administrator.', 'danger')
+    return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -65,6 +47,35 @@ def logout():
     session.clear()
     flash('You have been logged out.', 'info')
     return redirect(url_for('login'))
+
+@app.route('/change-password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    if request.method == 'POST':
+        current_password = request.form.get('current_password')
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
+        if new_password != confirm_password:
+            flash('New passwords do not match.', 'danger')
+            return redirect(url_for('change_password'))
+        if len(new_password) < 6:
+            flash('Password must be at least 6 characters.', 'danger')
+            return redirect(url_for('change_password'))
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT password FROM users WHERE id = %s', (session['user_id'],))
+        user = cursor.fetchone()
+        if not user or not check_password_hash(user['password'], current_password):
+            flash('Current password is incorrect.', 'danger')
+            conn.close()
+            return redirect(url_for('change_password'))
+        new_hashed = generate_password_hash(new_password)
+        cursor.execute('UPDATE users SET password = %s WHERE id = %s', (new_hashed, session['user_id']))
+        conn.commit()
+        conn.close()
+        flash('Password updated successfully!', 'success')
+        return redirect(url_for('dashboard'))
+    return render_template('change_password.html')
 
 @app.route('/')
 @login_required
