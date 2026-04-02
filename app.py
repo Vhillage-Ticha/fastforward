@@ -22,10 +22,10 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            flash('Please log in.', 'danger')
+            flash('Please log in to access this page.', 'danger')
             return redirect(url_for('login'))
-        if not session.get('is_admin', False):
-            flash('Access denied. Admins only.', 'danger')
+        if not session.get('is_admin'):
+            flash('Access denied. Admin only.', 'danger')
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
     return decorated_function
@@ -46,9 +46,9 @@ def login():
         user = cursor.fetchone()
         conn.close()
         if user and check_password_hash(user['password'], password):
-            if not user.get('is_active', True):
-                flash('Your account has been suspended. Please contact support.', 'danger')
-                return redirect(url_for('login'))
+            if user.get('status') == 'suspended':
+                flash('Your account has been suspended. Please contact your administrator.', 'danger')
+                return render_template('Login.html')
             session['user_id'] = user['id']
             session['username'] = user['username']
             session['is_admin'] = user.get('is_admin', False)
@@ -116,6 +116,88 @@ def dashboard():
     total_profit_potential = result or 0.0
     conn.close()
     return render_template('dashboard.html', total_items=total_items, total_quantity=total_quantity, total_profit_potential=total_profit_potential)
+
+@app.route('/admin')
+@admin_required
+def admin_panel():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, username, status, is_admin FROM users ORDER BY id')
+    users = cursor.fetchall()
+    conn.close()
+    return render_template('admin.html', users=users)
+
+@app.route('/admin/create-user', methods=['POST'])
+@admin_required
+def admin_create_user():
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '').strip()
+    if not username or not password:
+        flash('Username and password are required.', 'danger')
+        return redirect(url_for('admin_panel'))
+    hashed_password = generate_password_hash(password)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('INSERT INTO users (username, password, status, is_admin) VALUES (%s, %s, %s, %s)',
+                      (username, hashed_password, 'active', False))
+        conn.commit()
+        flash(f'Account created for "{username}" successfully!', 'success')
+    except Exception:
+        conn.rollback()
+        flash('Username already exists.', 'danger')
+    finally:
+        conn.close()
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/suspend/<int:user_id>')
+@admin_required
+def admin_suspend(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET status = %s WHERE id = %s AND is_admin = FALSE', ('suspended', user_id))
+    conn.commit()
+    conn.close()
+    flash('Account suspended.', 'success')
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/activate/<int:user_id>')
+@admin_required
+def admin_activate(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET status = %s WHERE id = %s', ('active', user_id))
+    conn.commit()
+    conn.close()
+    flash('Account activated.', 'success')
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/reset-password/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_reset_password(user_id):
+    new_password = request.form.get('new_password', '').strip()
+    if not new_password or len(new_password) < 6:
+        flash('Password must be at least 6 characters.', 'danger')
+        return redirect(url_for('admin_panel'))
+    hashed = generate_password_hash(new_password)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET password = %s WHERE id = %s', (hashed, user_id))
+    conn.commit()
+    conn.close()
+    flash('Password reset successfully.', 'success')
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/delete/<int:user_id>')
+@admin_required
+def admin_delete(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM users WHERE id = %s AND is_admin = FALSE', (user_id,))
+    conn.commit()
+    conn.close()
+    flash('Account deleted permanently.', 'success')
+    return redirect(url_for('admin_panel'))
 
 @app.route('/get_products')
 @login_required
@@ -581,119 +663,23 @@ def setup_db():
     init_db()
     return 'Database initialized successfully!'
 
-# ----------------------------------------------------------------
-# ADMIN PANEL ROUTES — accessible only to admin users
-# ----------------------------------------------------------------
-
-@app.route('/admin')
-@admin_required
-def admin_panel():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        'SELECT id, username, is_active, is_admin FROM users ORDER BY is_admin DESC, username ASC'
-    )
-    users = [dict(u) for u in cursor.fetchall()]
-    conn.close()
-    return render_template('admin_panel.html', users=users)
-
-@app.route('/admin/create-user', methods=['POST'])
-@admin_required
-def admin_create_user():
-    username = request.form.get('username', '').strip()
-    password = request.form.get('password', '').strip()
-    if not username or len(password) < 6:
-        flash('Username and a password of at least 6 characters are required.', 'danger')
-        return redirect(url_for('admin_panel'))
+@app.route('/setup-admin')
+def setup_admin():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        hashed = generate_password_hash(password)
-        cursor.execute(
-            'INSERT INTO users (username, password, is_active, is_admin) VALUES (%s, %s, TRUE, FALSE)',
-            (username, hashed)
-        )
+        cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'")
+        cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE")
+        cursor.execute("UPDATE users SET is_admin = TRUE WHERE username = 'admin'")
+        cursor.execute("UPDATE users SET status = 'active' WHERE status IS NULL")
         conn.commit()
-        flash(f'User "{username}" created successfully. Share their temporary password securely.', 'success')
-    except Exception:
+        return 'Admin setup complete! You can now log in as admin.'
+    except Exception as e:
         conn.rollback()
-        flash(f'Username "{username}" already exists. Choose a different one.', 'danger')
+        return f'Error: {str(e)}'
     finally:
+        cursor.close()
         conn.close()
-    return redirect(url_for('admin_panel'))
-
-@app.route('/admin/toggle-user', methods=['POST'])
-@admin_required
-def admin_toggle_user():
-    user_id = request.form.get('user_id')
-    action = request.form.get('action')
-    if action not in ('suspend', 'activate'):
-        flash('Invalid action.', 'danger')
-        return redirect(url_for('admin_panel'))
-    new_status = (action == 'activate')
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT username FROM users WHERE id = %s', (user_id,))
-    user = cursor.fetchone()
-    if not user:
-        flash('User not found.', 'danger')
-        conn.close()
-        return redirect(url_for('admin_panel'))
-    cursor.execute('UPDATE users SET is_active = %s WHERE id = %s', (new_status, user_id))
-    conn.commit()
-    conn.close()
-    verb = 'reactivated' if new_status else 'suspended'
-    flash(f'User "{user["username"]}" has been {verb}.', 'success')
-    return redirect(url_for('admin_panel'))
-
-@app.route('/admin/reset-password', methods=['POST'])
-@admin_required
-def admin_reset_password():
-    user_id = request.form.get('user_id')
-    new_password = request.form.get('new_password', '').strip()
-    if len(new_password) < 6:
-        flash('Password must be at least 6 characters.', 'danger')
-        return redirect(url_for('admin_panel'))
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT username FROM users WHERE id = %s', (user_id,))
-    user = cursor.fetchone()
-    if not user:
-        flash('User not found.', 'danger')
-        conn.close()
-        return redirect(url_for('admin_panel'))
-    cursor.execute(
-        'UPDATE users SET password = %s WHERE id = %s',
-        (generate_password_hash(new_password), user_id)
-    )
-    conn.commit()
-    conn.close()
-    flash(f'Password reset for "{user["username"]}". Share the new password securely.', 'success')
-    return redirect(url_for('admin_panel'))
-
-@app.route('/admin/delete-user', methods=['POST'])
-@admin_required
-def admin_delete_user():
-    user_id = request.form.get('user_id')
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT username, is_admin FROM users WHERE id = %s', (user_id,))
-    user = cursor.fetchone()
-    if not user:
-        flash('User not found.', 'danger')
-        conn.close()
-        return redirect(url_for('admin_panel'))
-    if user['is_admin']:
-        flash('Cannot delete an admin account.', 'danger')
-        conn.close()
-        return redirect(url_for('admin_panel'))
-    cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
-    conn.commit()
-    conn.close()
-    flash(f'User "{user["username"]}" and all their data have been permanently deleted.', 'success')
-    return redirect(url_for('admin_panel'))
-
-# ----------------------------------------------------------------
 
 if __name__ == '__main__':
     init_db()

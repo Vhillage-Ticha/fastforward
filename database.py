@@ -87,15 +87,8 @@ def init_db():
         )
     ''')
 
-    # Admin control columns — safe to run on existing databases
-    cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE')
-    cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE')
-
     hashed_password = generate_password_hash('password')
     cursor.execute('INSERT INTO users (username, password) VALUES (%s, %s) ON CONFLICT (username) DO NOTHING', ('admin', hashed_password))
-
-    # Make the admin user an admin
-    cursor.execute("UPDATE users SET is_admin = TRUE WHERE username = 'admin'")
 
     conn.commit()
     cursor.close()
