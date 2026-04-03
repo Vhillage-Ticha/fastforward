@@ -125,7 +125,7 @@ def admin_panel():
     cursor.execute('SELECT id, username, status, is_admin FROM users ORDER BY id')
     users = cursor.fetchall()
     conn.close()
-    return render_template('admin.html', users=users)
+    return render_template('admin_panel.html', users=users)
 
 @app.route('/admin/create-user', methods=['POST'])
 @admin_required
