@@ -39,7 +39,8 @@
         <div class="bg-indigo-600 p-6 rounded-2xl card mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
                 <h3 class="text-xl font-medium text-indigo-200 mb-2">Total Expenses</h3>
-                <p class="text-5xl font-extrabold text-white">GHS {{ "%.2f"|format(total_expenses) }}</p>
+                <p id="summary-total" class="text-5xl font-extrabold text-white">GHS {{ "%.2f"|format(total_expenses) }}</p>
+                <p id="summary-label" class="text-indigo-200 text-sm mt-1">All time</p>
             </div>
             <button onclick="exportToCSV()"
                     class="bg-white hover:bg-indigo-50 text-indigo-700 font-semibold py-2 px-5 rounded-xl transition duration-150 shadow-md text-sm flex items-center gap-2 self-start sm:self-auto">
@@ -48,6 +49,27 @@
                 </svg>
                 Export to CSV
             </button>
+        </div>
+
+        <!-- Month Filter -->
+        <div class="bg-white p-4 rounded-2xl card border border-gray-100 mb-6 flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex items-center gap-3 flex-1">
+                <label class="text-sm font-medium text-gray-700 whitespace-nowrap">Filter by Month:</label>
+                <select id="month-filter" onchange="filterByMonth()"
+                        class="flex-1 p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+                    <option value="all">All Months</option>
+                </select>
+            </div>
+            <button onclick="clearFilter()"
+                    class="text-sm text-indigo-600 hover:text-indigo-800 font-medium underline whitespace-nowrap">
+                Clear Filter
+            </button>
+        </div>
+
+        <!-- Monthly Breakdown (shown when a month is selected) -->
+        <div id="monthly-breakdown" class="hidden bg-white p-5 rounded-2xl card border border-gray-100 mb-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-3">Monthly Breakdown</h2>
+            <div id="breakdown-content" class="grid grid-cols-2 sm:grid-cols-3 gap-3"></div>
         </div>
 
         <!-- Form to Add New Expense -->
@@ -82,7 +104,7 @@
 
         <!-- Expenses List Table -->
         <div class="bg-white p-6 rounded-2xl card border border-gray-100 overflow-x-auto">
-            <h2 class="text-xl font-semibold text-gray-800 mb-4">Expense History ({{ expenses|length }})</h2>
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Expense History (<span id="expense-count">{{ expenses|length }}</span>)</h2>
 
             {% if expenses %}
             <table class="min-w-full divide-y divide-gray-200">
@@ -94,9 +116,9 @@
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
                     </tr>
                 </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
+                <tbody id="expenses-tbody" class="bg-white divide-y divide-gray-200">
                     {% for expense in expenses %}
-                    <tr>
+                    <tr data-month="{{ expense.expense_date[:7] }}" data-amount="{{ expense.amount }}">
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ expense.expense_date }}</td>
                         <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ expense.description }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-bold text-right">GHS {{ "%.2f"|format(expense.amount) }}</td>
@@ -117,6 +139,9 @@
                     {% endfor %}
                 </tbody>
             </table>
+            <div id="no-results" class="hidden text-center py-8 text-gray-500 border border-dashed rounded-lg bg-gray-50 mt-4">
+                <p>No expenses found for the selected month.</p>
+            </div>
             {% else %}
             <div class="text-center py-8 text-gray-500 border border-dashed rounded-lg bg-gray-50">
                 <p>No expenses recorded yet. Use the form above to track your spending!</p>
@@ -124,36 +149,125 @@
             {% endif %}
         </div>
     </div>
+
     <script>
-        // Set today's date as default
         document.getElementById('expense_date').valueAsDate = new Date();
 
-        function exportToCSV() {
-            const rows = [['Date', 'Description', 'Amount (GHS)']];
+        // Build month options from table data
+        const rows = document.querySelectorAll('#expenses-tbody tr');
+        const monthSet = new Set();
+        const monthTotals = {};
 
-            const tableRows = document.querySelectorAll('tbody tr');
-            tableRows.forEach(row => {
-                const cells = row.querySelectorAll('td');
-                if (cells.length >= 3) {
-                    rows.push([
-                        cells[0].textContent.trim(),
-                        cells[1].textContent.trim(),
-                        cells[2].textContent.replace('GHS','').trim()
-                    ]);
+        rows.forEach(row => {
+            const month = row.dataset.month;
+            const amount = parseFloat(row.dataset.amount);
+            if (month) {
+                monthSet.add(month);
+                monthTotals[month] = (monthTotals[month] || 0) + amount;
+            }
+        });
+
+        const sortedMonths = Array.from(monthSet).sort().reverse();
+        const select = document.getElementById('month-filter');
+
+        sortedMonths.forEach(m => {
+            const [year, month] = m.split('-');
+            const label = new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+            const option = document.createElement('option');
+            option.value = m;
+            option.textContent = label;
+            select.appendChild(option);
+        });
+
+        function filterByMonth() {
+            const selected = select.value;
+            let visibleCount = 0;
+            let visibleTotal = 0;
+
+            rows.forEach(row => {
+                if (selected === 'all' || row.dataset.month === selected) {
+                    row.style.display = '';
+                    visibleCount++;
+                    visibleTotal += parseFloat(row.dataset.amount);
+                } else {
+                    row.style.display = 'none';
                 }
             });
 
-            const total = document.querySelector('.text-5xl').textContent.replace('GHS','').trim();
-            rows.push(['', 'TOTAL EXPENSES', total]);
+            document.getElementById('expense-count').textContent = visibleCount;
+            document.getElementById('no-results').classList.toggle('hidden', visibleCount > 0);
 
-            const csvContent = rows.map(r =>
+            // Update summary card
+            const totalEl = document.getElementById('summary-total');
+            const labelEl = document.getElementById('summary-label');
+            totalEl.textContent = 'GHS ' + visibleTotal.toFixed(2);
+
+            if (selected === 'all') {
+                labelEl.textContent = 'All time';
+                document.getElementById('monthly-breakdown').classList.add('hidden');
+            } else {
+                const [year, month] = selected.split('-');
+                const label = new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+                labelEl.textContent = label;
+                showBreakdown(selected);
+            }
+        }
+
+        function showBreakdown(selectedMonth) {
+            const breakdown = document.getElementById('monthly-breakdown');
+            const content = document.getElementById('breakdown-content');
+            breakdown.classList.remove('hidden');
+
+            // Group by description category for the selected month
+            const categoryTotals = {};
+            rows.forEach(row => {
+                if (row.dataset.month === selectedMonth) {
+                    const desc = row.querySelectorAll('td')[1].textContent.trim();
+                    const amt = parseFloat(row.dataset.amount);
+                    categoryTotals[desc] = (categoryTotals[desc] || 0) + amt;
+                }
+            });
+
+            content.innerHTML = Object.entries(categoryTotals)
+                .sort((a, b) => b[1] - a[1])
+                .map(([desc, total]) => `
+                    <div class="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                        <p class="text-xs text-gray-500 truncate">${desc}</p>
+                        <p class="text-base font-bold text-red-600 mt-1">GHS ${total.toFixed(2)}</p>
+                    </div>
+                `).join('');
+        }
+
+        function clearFilter() {
+            select.value = 'all';
+            filterByMonth();
+        }
+
+        function exportToCSV() {
+            const visibleRows = Array.from(rows).filter(r => r.style.display !== 'none');
+            const csvRows = [['Date', 'Description', 'Amount (GHS)']];
+
+            visibleRows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                csvRows.push([
+                    cells[0].textContent.trim(),
+                    cells[1].textContent.trim(),
+                    cells[2].textContent.replace('GHS', '').trim()
+                ]);
+            });
+
+            const total = document.getElementById('summary-total').textContent.replace('GHS', '').trim();
+            csvRows.push(['', 'TOTAL EXPENSES', total]);
+
+            const csvContent = csvRows.map(r =>
                 r.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(',')
             ).join('\n');
 
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = 'expenses_' + new Date().toISOString().slice(0, 10) + '.csv';
+            const month = select.value === 'all' ? 'all' : select.value;
+            link.download = 'expenses_' + month + '.csv';
             link.click();
         }
     </script>
