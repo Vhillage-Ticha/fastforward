@@ -11,6 +11,9 @@
         .card { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.06); }
         .status-outstanding { background-color: #ebf5ff; color: #1e40af; border: 1px solid #93c5fd; }
         .modal-backdrop { backdrop-filter: blur(2px); }
+        .form-slide { transition: max-height 0.35s ease, opacity 0.3s ease; overflow: hidden; }
+        .form-slide.open { max-height: 400px; opacity: 1; }
+        .form-slide.closed { max-height: 0; opacity: 0; }
     </style>
 </head>
 <body class="p-4 sm:p-8">
@@ -18,56 +21,51 @@
 
     <header class="flex justify-between items-center py-4 border-b border-gray-200 mb-8">
         <h1 class="text-3xl font-bold text-indigo-700">Accounts Receivables</h1>
-        <a href="{{ url_for('dashboard') }}" class="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 px-4 rounded-xl transition duration-150 font-medium">
-            &larr; Dashboard
-        </a>
+        <div class="flex items-center gap-3">
+            <button onclick="toggleForm()" id="toggle-btn"
+                    class="w-10 h-10 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-lg transition text-2xl font-bold"
+                    title="Record New Receivable">+</button>
+            <a href="{{ url_for('dashboard') }}" class="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 px-4 rounded-xl transition duration-150 font-medium">&larr; Dashboard</a>
+        </div>
     </header>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             <ul class="mb-6 space-y-2">
             {% for category, message in messages %}
-                <li class="p-3 rounded-lg text-sm {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'danger' %}bg-red-100 text-red-800{% else %}bg-blue-100 text-blue-800{% endif %}">
-                    {{ message }}
-                </li>
+                <li class="p-3 rounded-lg text-sm {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'danger' %}bg-red-100 text-red-800{% else %}bg-blue-100 text-blue-800{% endif %}">{{ message }}</li>
             {% endfor %}
             </ul>
         {% endif %}
     {% endwith %}
 
-    <!-- Add / Edit Form -->
-    <div class="bg-white p-6 rounded-2xl card border border-gray-100 mb-8">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4" id="formTitle">Record New Receivable (Invoice)</h2>
-        <form method="POST" action="{{ url_for('receivables') }}" class="grid grid-cols-1 md:grid-cols-4 gap-4" id="receivableForm">
-            <input type="hidden" id="receivable_id" name="id" value="">
-            <div class="md:col-span-2">
-                <label for="customer" class="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
-                <input type="text" id="customer" name="customer" required
-                       class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                       placeholder="e.g., Jane's Retail Shop">
+    <!-- Collapsible Add / Edit Form -->
+    <div id="add-form-wrapper" class="form-slide closed mb-6">
+        <div class="bg-white p-6 rounded-2xl card border border-gray-100">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold text-gray-800" id="formTitle">Record New Receivable (Invoice)</h2>
+                <button onclick="toggleForm()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
             </div>
-            <div>
-                <label for="amount" class="block text-sm font-medium text-gray-700 mb-1">Amount (GHS)</label>
-                <input type="number" step="0.01" id="amount" name="amount" required
-                       class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                       placeholder="0.00">
-            </div>
-            <div>
-                <label for="transaction_date" class="block text-sm font-medium text-gray-700 mb-1">Transaction Date</label>
-                <input type="date" id="transaction_date" name="transaction_date" required
-                       class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
-            </div>
-            <div class="md:col-span-4 flex justify-end space-x-3">
-                <button type="button" onclick="resetForm()" id="resetButton"
-                        class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-6 rounded-xl transition hidden">
-                    Cancel Edit
-                </button>
-                <button type="submit" id="submitButton"
-                        class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-xl transition shadow-md">
-                    Record Receivable
-                </button>
-            </div>
-        </form>
+            <form method="POST" action="{{ url_for('receivables') }}" class="grid grid-cols-1 md:grid-cols-4 gap-4" id="receivableForm">
+                <input type="hidden" id="receivable_id" name="id" value="">
+                <div class="md:col-span-2">
+                    <label for="customer" class="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
+                    <input type="text" id="customer" name="customer" required class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., Jane's Retail Shop">
+                </div>
+                <div>
+                    <label for="amount" class="block text-sm font-medium text-gray-700 mb-1">Amount (GHS)</label>
+                    <input type="number" step="0.01" id="amount" name="amount" required class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" placeholder="0.00">
+                </div>
+                <div>
+                    <label for="transaction_date" class="block text-sm font-medium text-gray-700 mb-1">Transaction Date</label>
+                    <input type="date" id="transaction_date" name="transaction_date" required class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div class="md:col-span-4 flex justify-end space-x-3">
+                    <button type="button" onclick="resetForm()" id="resetButton" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-6 rounded-xl transition hidden">Cancel Edit</button>
+                    <button type="submit" id="submitButton" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-xl transition shadow-md">Record Receivable</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- Total Outstanding Banner -->
@@ -77,11 +75,8 @@
             <p class="text-4xl font-extrabold text-white" id="total-receivables-display">GHS {{ '%.2f' | format(total_receivables_calc or 0) }}</p>
             <p class="text-indigo-300 text-xs mt-1">Active accounts with positive balance only</p>
         </div>
-        <button onclick="exportTableCSV()"
-                class="bg-white hover:bg-indigo-50 text-indigo-700 font-semibold py-2 px-5 rounded-xl shadow text-sm flex items-center gap-2 self-start sm:self-auto">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-            </svg>
+        <button onclick="exportTableCSV()" class="bg-white hover:bg-indigo-50 text-indigo-700 font-semibold py-2 px-5 rounded-xl shadow text-sm flex items-center gap-2 self-start sm:self-auto">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
             Export to CSV
         </button>
     </div>
@@ -92,11 +87,8 @@
             <h2 class="text-xl font-semibold text-gray-800">Active Accounts <span class="text-indigo-600">({{ receivables | length }})</span></h2>
         </div>
         <div class="mb-4">
-            <input type="text" id="search_input" onkeyup="filterTable('search_input','receivablesTableBody')"
-                   placeholder="Search by customer name..."
-                   class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+            <input type="text" id="search_input" onkeyup="filterTable('search_input','receivablesTableBody')" placeholder="Search by customer name..." class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
         </div>
-
         {% if receivables %}
         <table class="min-w-full divide-y divide-gray-200" id="receivablesTable">
             <thead>
@@ -114,22 +106,15 @@
                     <td class="px-6 py-4 text-sm font-semibold text-gray-900">{{ r.customer }}</td>
                     <td class="px-6 py-4 text-sm font-bold text-indigo-700">GHS {{ '%.2f' | format(r.amount) }}</td>
                     <td class="px-6 py-4 text-sm text-gray-700">{{ r.transaction_date }}</td>
-                    <td class="px-6 py-4">
-                        <span class="inline-flex px-3 py-1 text-xs font-semibold rounded-full status-outstanding">Outstanding</span>
-                    </td>
+                    <td class="px-6 py-4"><span class="inline-flex px-3 py-1 text-xs font-semibold rounded-full status-outstanding">Outstanding</span></td>
                     <td class="px-6 py-4 text-sm font-medium space-x-1" onclick="event.stopPropagation()">
-                        <button onclick="openTransactionModal('{{ r.id }}','{{ r.customer }}','{{ '%.2f'|format(r.amount) }}','{{ '%.2f'|format(r.original_amount) }}','receivable')"
-                                class="text-green-600 hover:text-green-800 p-1 rounded-lg hover:bg-green-100 transition" title="Record Payment">
+                        <button onclick="openTransactionModal('{{ r.id }}','{{ r.customer }}','{{ '%.2f'|format(r.amount) }}','{{ '%.2f'|format(r.original_amount) }}','receivable')" class="text-green-600 hover:text-green-800 p-1 rounded-lg hover:bg-green-100 transition" title="Record Payment">
                             <svg class="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         </button>
-                        <button onclick="editReceivable(this)"
-                                data-id="{{ r.id }}" data-customer="{{ r.customer }}"
-                                data-amount="{{ '%.2f'|format(r.amount) }}" data-transaction-date="{{ r.transaction_date }}"
-                                class="text-indigo-600 hover:text-indigo-800 p-1 rounded-lg hover:bg-indigo-100 transition" title="Edit">
+                        <button onclick="editReceivable(this)" data-id="{{ r.id }}" data-customer="{{ r.customer }}" data-amount="{{ '%.2f'|format(r.amount) }}" data-transaction-date="{{ r.transaction_date }}" class="text-indigo-600 hover:text-indigo-800 p-1 rounded-lg hover:bg-indigo-100 transition" title="Edit">
                             <svg class="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.243-8.243z"/></svg>
                         </button>
-                        <button onclick="deleteReceivable('{{ r.id }}')"
-                                class="text-red-600 hover:text-red-800 p-1 rounded-lg hover:bg-red-100 transition" title="Delete">
+                        <button onclick="deleteReceivable('{{ r.id }}')" class="text-red-600 hover:text-red-800 p-1 rounded-lg hover:bg-red-100 transition" title="Delete">
                             <svg class="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.875A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.125L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                         </button>
                     </td>
@@ -139,12 +124,12 @@
         </table>
         {% else %}
         <div class="text-center py-10 text-gray-400 border border-dashed rounded-xl bg-gray-50">
-            <p class="text-lg">No active receivables. Use the form above to record one.</p>
+            <p class="text-lg">No active receivables. Click <strong>+</strong> to record one.</p>
         </div>
         {% endif %}
     </div>
 
-    <!-- Cleared / Settled Accounts -->
+    <!-- Cleared Accounts -->
     {% if cleared_receivables %}
     <div class="bg-white p-6 rounded-2xl card border border-green-200 overflow-x-auto mb-8">
         <div class="flex items-center justify-between mb-4">
@@ -152,15 +137,12 @@
                 <h2 class="text-xl font-semibold text-green-700">✓ Cleared Accounts <span class="text-gray-500 text-base font-normal">({{ cleared_receivables | length }})</span></h2>
                 <p class="text-xs text-gray-500 mt-1">These customers have fully settled their debts. Click a row to view their full history.</p>
             </div>
-            <button onclick="exportClearedCSV()"
-                    class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-xl text-sm flex items-center gap-2 shadow">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                </svg>
+            <button onclick="exportClearedCSV()" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-xl text-sm flex items-center gap-2 shadow">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                 Export CSV
             </button>
         </div>
-        <table class="min-w-full divide-y divide-green-100" id="clearedReceivablesTable">
+        <table class="min-w-full divide-y divide-green-100">
             <thead>
                 <tr class="bg-green-50">
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
@@ -176,12 +158,9 @@
                     <td class="px-6 py-4 text-sm font-semibold text-gray-800">{{ r.customer }}</td>
                     <td class="px-6 py-4 text-sm text-gray-600">GHS {{ '%.2f' | format(r.original_amount) }}</td>
                     <td class="px-6 py-4 text-sm text-gray-600">{{ r.transaction_date }}</td>
-                    <td class="px-6 py-4">
-                        <span class="inline-flex px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 border border-green-300">✓ Collected</span>
-                    </td>
+                    <td class="px-6 py-4"><span class="inline-flex px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 border border-green-300">✓ Collected</span></td>
                     <td class="px-6 py-4 text-sm" onclick="event.stopPropagation()">
-                        <button onclick="deleteReceivable('{{ r.id }}')"
-                                class="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-50 transition" title="Delete Record">
+                        <button onclick="deleteReceivable('{{ r.id }}')" class="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-50 transition" title="Delete Record">
                             <svg class="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.875A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.125L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                         </button>
                     </td>
@@ -192,88 +171,65 @@
     </div>
     {% endif %}
 
-</div><!-- end max-w -->
+</div>
 
 <!-- Transaction / History Modal -->
 <div id="transactionModal" class="fixed inset-0 bg-gray-800 bg-opacity-60 modal-backdrop z-50 hidden flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl w-full max-w-lg card shadow-2xl">
-
-        <!-- Modal Header -->
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
             <h3 class="text-lg font-bold text-gray-800" id="tx_modalTitle">Transaction</h3>
             <button onclick="closeTransactionModal()" class="text-gray-400 hover:text-gray-600 transition">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
         </div>
-
-        <!-- Summary Bar -->
         <div class="px-6 py-3 bg-gray-50 border-b border-gray-200 flex gap-6 text-sm">
             <div><span class="text-gray-500">Original:</span> <span class="font-semibold text-gray-800" id="tx_originalAmount"></span></div>
             <div><span class="text-gray-500">Balance:</span> <span class="font-bold" id="tx_remainingBalance"></span></div>
         </div>
-
-        <!-- Record Payment Form -->
         <form id="paymentForm" class="px-6 py-4 space-y-4 hidden">
             <input type="hidden" id="tx_entity_id">
             <input type="hidden" id="tx_entity_type" value="receivable">
-
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Transaction Type</label>
                 <div class="flex space-x-6">
-                    <label class="inline-flex items-center">
-                        <input type="radio" name="transaction_type" value="payment" required checked class="form-radio text-green-600 h-4 w-4">
-                        <span class="ml-2 text-sm text-green-700 font-medium">Client Paid (Decrease Debt)</span>
-                    </label>
-                    <label class="inline-flex items-center">
-                        <input type="radio" name="transaction_type" value="borrow" required class="form-radio text-red-600 h-4 w-4">
-                        <span class="ml-2 text-sm text-red-700 font-medium">New Borrow (Increase Debt)</span>
-                    </label>
+                    <label class="inline-flex items-center"><input type="radio" name="transaction_type" value="payment" required checked class="form-radio text-green-600 h-4 w-4"><span class="ml-2 text-sm text-green-700 font-medium">Client Paid (Decrease Debt)</span></label>
+                    <label class="inline-flex items-center"><input type="radio" name="transaction_type" value="borrow" required class="form-radio text-red-600 h-4 w-4"><span class="ml-2 text-sm text-red-700 font-medium">New Borrow (Increase Debt)</span></label>
                 </div>
             </div>
             <div>
                 <label for="payment_amount" class="block text-sm font-medium text-gray-700 mb-1">Amount (GHS)</label>
-                <input type="number" step="0.01" id="payment_amount" required min="0.01"
-                       class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" placeholder="0.00">
+                <input type="number" step="0.01" id="payment_amount" required min="0.01" class="w-full p-2 border border-gray-300 rounded-lg" placeholder="0.00">
             </div>
             <div>
                 <label for="payment_date" class="block text-sm font-medium text-gray-700 mb-1">Transaction Date</label>
-                <input type="date" id="payment_date" required class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                <input type="date" id="payment_date" required class="w-full p-2 border border-gray-300 rounded-lg">
             </div>
             <div>
                 <label for="payment_description" class="block text-sm font-medium text-gray-700 mb-1">Description (Optional)</label>
-                <input type="text" id="payment_description" maxlength="100"
-                       class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., Part payment for goods">
+                <input type="text" id="payment_description" maxlength="100" class="w-full p-2 border border-gray-300 rounded-lg" placeholder="e.g., Part payment for goods">
             </div>
             <div class="flex justify-end space-x-3 pt-2">
                 <button type="button" onclick="closeTransactionModal()" class="py-2 px-4 bg-gray-200 text-gray-800 font-medium rounded-xl hover:bg-gray-300 transition">Cancel</button>
                 <button type="submit" class="py-2 px-4 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition">Record Transaction</button>
             </div>
         </form>
-
-        <!-- History View -->
         <div id="historyView" class="hidden">
             <div class="px-6 py-3 flex items-center justify-between border-b border-gray-100">
                 <h4 class="text-sm font-semibold text-gray-600 uppercase tracking-wide">Transaction Log</h4>
                 <button onclick="exportHistoryCSV()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded-lg flex items-center gap-1">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                    </svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                     Export CSV
                 </button>
             </div>
-            <div id="historyList" class="px-6 py-4 max-h-72 overflow-y-auto space-y-3">
-                <p class="text-center text-gray-400 py-6">Loading...</p>
-            </div>
+            <div id="historyList" class="px-6 py-4 max-h-72 overflow-y-auto space-y-3"><p class="text-center text-gray-400 py-6">Loading...</p></div>
             <div class="px-6 py-4 border-t border-gray-100 flex justify-end">
                 <button onclick="closeTransactionModal()" class="py-2 px-5 bg-gray-200 text-gray-800 font-medium rounded-xl hover:bg-gray-300 transition">Close</button>
             </div>
         </div>
-
     </div>
 </div>
 
 <script>
-    // ── Form helpers ──────────────────────────────────────────────
     const form = document.getElementById('receivableForm');
     const formTitle = document.getElementById('formTitle');
     const idInput = document.getElementById('receivable_id');
@@ -282,7 +238,6 @@
     const dateInput = document.getElementById('transaction_date');
     const submitButton = document.getElementById('submitButton');
     const resetButton = document.getElementById('resetButton');
-
     const txModal = document.getElementById('transactionModal');
     const txTitle = document.getElementById('tx_modalTitle');
     const txOriginal = document.getElementById('tx_originalAmount');
@@ -294,9 +249,16 @@
     const paymentAmountInput = document.getElementById('payment_amount');
     const paymentDateInput = document.getElementById('payment_date');
     const paymentDescriptionInput = document.getElementById('payment_description');
-
-    // Store history data for CSV export
     let currentHistoryData = { name: '', history: [], original_amount: '', remaining_amount: '' };
+
+    function toggleForm() {
+        const w = document.getElementById('add-form-wrapper');
+        const btn = document.getElementById('toggle-btn');
+        const isOpen = w.classList.contains('open');
+        w.classList.toggle('open', !isOpen);
+        w.classList.toggle('closed', isOpen);
+        btn.textContent = isOpen ? '+' : '×';
+    }
 
     function filterTable(inputId, tbodyId) {
         const filter = document.getElementById(inputId).value.toUpperCase();
@@ -317,12 +279,14 @@
         submitButton.classList.replace('bg-green-600','bg-indigo-600');
         submitButton.classList.replace('hover:bg-green-700','hover:bg-indigo-700');
         resetButton.classList.remove('hidden');
-        form.scrollIntoView({ behavior: 'smooth' });
+        const w = document.getElementById('add-form-wrapper');
+        w.classList.add('open'); w.classList.remove('closed');
+        document.getElementById('toggle-btn').textContent = '×';
+        w.scrollIntoView({ behavior: 'smooth' });
     }
 
     function resetForm() {
-        idInput.value = '';
-        form.reset();
+        idInput.value = ''; form.reset();
         formTitle.textContent = 'Record New Receivable (Invoice)';
         submitButton.textContent = 'Record Receivable';
         submitButton.classList.replace('bg-indigo-600','bg-green-600');
@@ -332,17 +296,11 @@
 
     function deleteReceivable(id) {
         if (!confirm('Delete this receivable record and all its transaction history?')) return;
-        const f = document.createElement('form');
-        f.method = 'POST';
-        f.action = '{{ url_for("delete_Receivables") }}';
-        const inp = document.createElement('input');
-        inp.type = 'hidden'; inp.name = 'id'; inp.value = id;
-        f.appendChild(inp);
-        document.body.appendChild(f);
-        f.submit();
+        const f = document.createElement('form'); f.method = 'POST'; f.action = '{{ url_for("delete_Receivables") }}';
+        const inp = document.createElement('input'); inp.type = 'hidden'; inp.name = 'id'; inp.value = id;
+        f.appendChild(inp); document.body.appendChild(f); f.submit();
     }
 
-    // ── Modal ─────────────────────────────────────────────────────
     function closeTransactionModal() {
         txModal.classList.add('hidden');
         paymentForm.classList.add('hidden');
@@ -367,35 +325,22 @@
 
     async function viewHistory(id, entityType) {
         txTitle.textContent = 'Loading...';
-        txOriginal.textContent = '';
-        txRemaining.textContent = '';
+        txOriginal.textContent = ''; txRemaining.textContent = '';
         paymentForm.classList.add('hidden');
         historyView.classList.remove('hidden');
         historyList.innerHTML = '<p class="text-center text-indigo-400 py-6">Loading history...</p>';
         txModal.classList.remove('hidden');
-
         try {
             const response = await fetch(`/history/${entityType}/${id}`);
             const data = await response.json();
-
-            if (!response.ok) {
-                historyList.innerHTML = `<p class="text-center text-red-500 py-6">${data.error || 'Error loading history.'}</p>`;
-                return;
-            }
-
+            if (!response.ok) { historyList.innerHTML = `<p class="text-center text-red-500 py-6">${data.error || 'Error loading history.'}</p>`; return; }
             currentHistoryData = data;
             txTitle.textContent = `${data.name} — History`;
             txOriginal.textContent = `GHS ${data.original_amount}`;
             txRemaining.textContent = `GHS ${data.remaining_amount}`;
             txRemaining.className = parseFloat(data.remaining_amount) > 0.005 ? 'font-bold text-indigo-700' : 'font-bold text-green-600';
-
             historyList.innerHTML = '';
-
-            if (data.history.length === 0) {
-                historyList.innerHTML = '<p class="text-center text-gray-400 py-8">No transactions recorded yet.</p>';
-                return;
-            }
-
+            if (data.history.length === 0) { historyList.innerHTML = '<p class="text-center text-gray-400 py-8">No transactions recorded yet.</p>'; return; }
             data.history.forEach((tx, index) => {
                 const isPayment = tx.tx_label === 'Payment';
                 const card = document.createElement('div');
@@ -404,9 +349,7 @@
                     <div class="flex items-start justify-between gap-4">
                         <div class="flex-grow">
                             <div class="flex items-center gap-2 mb-1">
-                                <span class="inline-flex px-2 py-0.5 text-xs font-bold rounded-full ${isPayment ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}">
-                                    ${tx.tx_label}
-                                </span>
+                                <span class="inline-flex px-2 py-0.5 text-xs font-bold rounded-full ${isPayment ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}">${tx.tx_label}</span>
                                 <span class="text-xs text-gray-400">#${data.history.length - index}</span>
                             </div>
                             <p class="text-lg font-extrabold ${isPayment ? 'text-green-700' : 'text-red-700'}">GHS ${tx.amount}</p>
@@ -416,42 +359,22 @@
                         <div class="text-right shrink-0 border-l pl-4 ${isPayment ? 'border-green-200' : 'border-red-200'}">
                             <p class="text-xs text-gray-400 mb-0.5">Balance after</p>
                             <p class="text-base font-bold ${parseFloat(tx.remaining_balance) > 0.005 ? 'text-indigo-700' : 'text-green-600'}">GHS ${tx.remaining_balance}</p>
-                            <button onclick="deleteTransaction(${tx.id}, event)"
-                                    class="mt-2 text-xs text-red-400 hover:text-red-600 underline transition">Delete</button>
+                            <button onclick="deleteTransaction(${tx.id}, event)" class="mt-2 text-xs text-red-400 hover:text-red-600 underline transition">Delete</button>
                         </div>
-                    </div>
-                `;
+                    </div>`;
                 historyList.appendChild(card);
             });
-
-        } catch (err) {
-            historyList.innerHTML = '<p class="text-center text-red-500 py-6">Network error. Could not load history.</p>';
-        }
+        } catch (err) { historyList.innerHTML = '<p class="text-center text-red-500 py-6">Network error. Could not load history.</p>'; }
     }
 
     paymentForm.addEventListener('submit', async function(e) {
         e.preventDefault();
-        const payload = {
-            entity_id: txEntityId.value,
-            entity_type: document.getElementById('tx_entity_type').value,
-            amount: parseFloat(paymentAmountInput.value),
-            date: paymentDateInput.value,
-            transaction_type: document.querySelector('input[name="transaction_type"]:checked').value,
-            description: paymentDescriptionInput.value
-        };
+        const payload = { entity_id: txEntityId.value, entity_type: document.getElementById('tx_entity_type').value, amount: parseFloat(paymentAmountInput.value), date: paymentDateInput.value, transaction_type: document.querySelector('input[name="transaction_type"]:checked').value, description: paymentDescriptionInput.value };
         if (payload.amount <= 0) { alert('Amount must be greater than zero.'); return; }
         try {
-            const res = await fetch('{{ url_for("add_transaction") }}', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            const res = await fetch('{{ url_for("add_transaction") }}', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             const data = await res.json();
-            if (res.ok && data.status === 'success') {
-                window.location.reload();
-            } else {
-                alert(`Error: ${data.message || 'Unknown error'}`);
-            }
+            if (res.ok && data.status === 'success') { window.location.reload(); } else { alert(`Error: ${data.message || 'Unknown error'}`); }
         } catch { alert('Network error.'); }
     });
 
@@ -459,36 +382,19 @@
         event.stopPropagation();
         if (!confirm('Permanently delete this transaction? This will reverse the balance.')) return;
         try {
-            const res = await fetch('{{ url_for("delete_transaction") }}', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ transaction_id: transactionId })
-            });
+            const res = await fetch('{{ url_for("delete_transaction") }}', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transaction_id: transactionId }) });
             const data = await res.json();
-            if (res.ok && data.status === 'success') {
-                window.location.reload();
-            } else {
-                alert(`Error: ${data.message || 'Unknown error'}`);
-            }
+            if (res.ok && data.status === 'success') { window.location.reload(); } else { alert(`Error: ${data.message || 'Unknown error'}`); }
         } catch { alert('Network error.'); }
     }
 
-    // Close modal on backdrop click
     txModal.addEventListener('click', e => { if (e.target === txModal) closeTransactionModal(); });
 
-    // ── CSV Exports ───────────────────────────────────────────────
     function exportTableCSV() {
         const rows = [['Customer', 'Remaining Balance (GHS)', 'Latest Date', 'Status']];
         document.querySelectorAll('#receivablesTableBody tr').forEach(row => {
             const cells = row.querySelectorAll('td');
-            if (cells.length >= 4) {
-                rows.push([
-                    cells[0].textContent.trim(),
-                    cells[1].textContent.replace('GHS','').trim(),
-                    cells[2].textContent.trim(),
-                    cells[3].textContent.trim()
-                ]);
-            }
+            if (cells.length >= 4) rows.push([cells[0].textContent.trim(), cells[1].textContent.replace('GHS','').trim(), cells[2].textContent.trim(), cells[3].textContent.trim()]);
         });
         const total = document.getElementById('total-receivables-display').textContent.replace('GHS','').trim();
         rows.push(['', 'TOTAL OUTSTANDING', total, '']);
@@ -499,46 +405,22 @@
         const rows = [['Customer', 'Original Amount (GHS)', 'Last Transaction Date', 'Status']];
         document.querySelectorAll('#clearedTableBody tr').forEach(row => {
             const cells = row.querySelectorAll('td');
-            if (cells.length >= 4) {
-                rows.push([
-                    cells[0].textContent.trim(),
-                    cells[1].textContent.replace('GHS','').trim(),
-                    cells[2].textContent.trim(),
-                    cells[3].textContent.trim()
-                ]);
-            }
+            if (cells.length >= 4) rows.push([cells[0].textContent.trim(), cells[1].textContent.replace('GHS','').trim(), cells[2].textContent.trim(), cells[3].textContent.trim()]);
         });
         downloadCSV(rows, 'receivables_cleared_' + today());
     }
 
     function exportHistoryCSV() {
         if (!currentHistoryData.name) return;
-        const rows = [
-            [`Transaction History — ${currentHistoryData.name}`],
-            [`Original Amount: GHS ${currentHistoryData.original_amount}`, `Remaining Balance: GHS ${currentHistoryData.remaining_amount}`],
-            [],
-            ['#', 'Type', 'Amount (GHS)', 'Date', 'Description', 'Balance After (GHS)']
-        ];
-        currentHistoryData.history.forEach((tx, i) => {
-            rows.push([
-                currentHistoryData.history.length - i,
-                tx.tx_label,
-                tx.amount,
-                tx.date,
-                tx.description || '',
-                tx.remaining_balance
-            ]);
-        });
+        const rows = [[`Transaction History — ${currentHistoryData.name}`], [`Original Amount: GHS ${currentHistoryData.original_amount}`, `Remaining Balance: GHS ${currentHistoryData.remaining_amount}`], [], ['#', 'Type', 'Amount (GHS)', 'Date', 'Description', 'Balance After (GHS)']];
+        currentHistoryData.history.forEach((tx, i) => { rows.push([currentHistoryData.history.length - i, tx.tx_label, tx.amount, tx.date, tx.description || '', tx.remaining_balance]); });
         downloadCSV(rows, `history_${currentHistoryData.name.replace(/\s+/g,'_')}_${today()}`);
     }
 
     function downloadCSV(rows, filename) {
         const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g,'""') + '"').join(',')).join('\n');
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = filename + '.csv';
-        a.click();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename + '.csv'; a.click();
     }
 
     function today() { return new Date().toISOString().slice(0,10); }
