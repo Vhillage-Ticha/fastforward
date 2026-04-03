@@ -36,14 +36,21 @@
             {% endif %}
         {% endwith %}
 
+        <!-- Create Account Form -->
         <div class="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
             <h2 class="text-lg font-semibold text-gray-800 mb-4">Create new client account</h2>
-            <form method="POST" action="{{ url_for('admin_create_user') }}" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <form method="POST" action="{{ url_for('admin_create_user') }}" class="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
                     <input type="text" name="username" required
                            class="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                            placeholder="e.g. kofi_shop">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Business Name</label>
+                    <input type="text" name="business_name"
+                           class="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                           placeholder="e.g. Febel Enterprise">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Initial password</label>
@@ -60,6 +67,7 @@
             </form>
         </div>
 
+        <!-- Users Table -->
         <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-100">
                 <h2 class="text-lg font-semibold text-gray-800">All client accounts</h2>
@@ -69,6 +77,7 @@
                 <thead class="bg-gray-50 border-b border-gray-100">
                     <tr>
                         <th class="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Username</th>
+                        <th class="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Business Name</th>
                         <th class="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
                         <th class="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Role</th>
                         <th class="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -78,6 +87,7 @@
                     {% for user in users %}
                     <tr class="hover:bg-gray-50">
                         <td class="px-6 py-4 text-sm font-medium text-gray-800">{{ user.username }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-600">{{ user.business_name or '—' }}</td>
                         <td class="px-6 py-4">
                             {% if user.status == 'suspended' %}
                                 <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-medium">Suspended</span>
@@ -97,15 +107,11 @@
                             <div class="flex items-center gap-2 flex-wrap">
                                 {% if user.status == 'suspended' %}
                                     <a href="{{ url_for('admin_activate', user_id=user.id) }}"
-                                       class="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200 transition font-medium">
-                                        Activate
-                                    </a>
+                                       class="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200 transition font-medium">Activate</a>
                                 {% else %}
                                     <a href="{{ url_for('admin_suspend', user_id=user.id) }}"
                                        onclick="return confirm('Suspend {{ user.username }}? They will not be able to log in.')"
-                                       class="text-xs bg-yellow-100 text-yellow-700 px-3 py-1 rounded-lg hover:bg-yellow-200 transition font-medium">
-                                        Suspend
-                                    </a>
+                                       class="text-xs bg-yellow-100 text-yellow-700 px-3 py-1 rounded-lg hover:bg-yellow-200 transition font-medium">Suspend</a>
                                 {% endif %}
 
                                 <form method="POST" action="{{ url_for('admin_reset_password', user_id=user.id) }}"
@@ -113,16 +119,12 @@
                                     <input type="text" name="new_password" placeholder="New password" minlength="6" required
                                            class="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500 w-28">
                                     <button type="submit"
-                                            class="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-lg hover:bg-blue-200 transition font-medium">
-                                        Reset pw
-                                    </button>
+                                            class="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-lg hover:bg-blue-200 transition font-medium">Reset pw</button>
                                 </form>
 
                                 <a href="{{ url_for('admin_delete', user_id=user.id) }}"
                                    onclick="return confirm('PERMANENTLY DELETE {{ user.username }} and ALL their data? This cannot be undone!')"
-                                   class="text-xs bg-red-100 text-red-600 px-3 py-1 rounded-lg hover:bg-red-200 transition font-medium">
-                                    Delete
-                                </a>
+                                   class="text-xs bg-red-100 text-red-600 px-3 py-1 rounded-lg hover:bg-red-200 transition font-medium">Delete</a>
                             </div>
                             {% else %}
                                 <span class="text-xs text-gray-400">Protected</span>
