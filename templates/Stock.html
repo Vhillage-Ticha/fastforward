@@ -12,6 +12,8 @@
         .status-low { background-color: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
         .status-high { background-color: #f0fdf4; color: #15803d; border: 1px solid #86efac; }
         .modal { transition: opacity 0.3s ease-in-out; }
+        .row-critical { background-color: #fff1f2; }
+        .row-warning { background-color: #fffbeb; }
     </style>
 </head>
 <body class="p-4 sm:p-8">
@@ -35,39 +37,64 @@
             {% endif %}
         {% endwith %}
 
+        <!-- Low Stock Alert Banner -->
+        {% set low_stock_items = stock | selectattr('quantity', 'le', 10) | list %}
+        {% if low_stock_items %}
+        <div class="bg-red-50 border border-red-200 rounded-2xl p-5 mb-6">
+            <div class="flex items-start gap-3">
+                <div class="text-red-500 mt-0.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                </div>
+                <div class="flex-1">
+                    <h3 class="text-red-700 font-semibold text-base mb-2">⚠️ Low Stock Alert — {{ low_stock_items|length }} item(s) need restocking</h3>
+                    <div class="flex flex-wrap gap-2">
+                        {% for item in low_stock_items %}
+                        <span class="inline-flex items-center gap-1 bg-white border border-red-200 text-red-700 text-xs font-semibold px-3 py-1 rounded-full shadow-sm">
+                            {{ item.item_name }}
+                            <span class="bg-red-100 text-red-800 px-1.5 py-0.5 rounded-full text-xs">{{ "%.0f"|format(item.quantity) }} left</span>
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                <button onclick="this.closest('.bg-red-50').style.display='none'" class="text-red-400 hover:text-red-600 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Add or Replenish Stock Form -->
         <div class="bg-white p-6 rounded-2xl card border border-gray-100 mb-8">
             <h2 class="text-xl font-semibold text-gray-800 mb-4">Add Stock</h2>
             <form method="POST" action="{{ url_for('stock') }}" class="grid grid-cols-1 md:grid-cols-5 gap-4">
-                
                 <div class="md:col-span-2">
                     <label for="item_name" class="block text-sm font-medium text-gray-700 mb-1">Item Name</label>
                     <input type="text" id="item_name" name="item_name" required
                            class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                            placeholder="e.g., Darling Lemon">
                 </div>
-                
                 <div>
                     <label for="quantity" class="block text-sm font-medium text-gray-700 mb-1">Quantity Received</label>
                     <input type="number" step="0.01" id="quantity" name="quantity" required min="0.01"
                            class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                            placeholder="e.g., 300">
                 </div>
-
                 <div>
                     <label for="unit_cost" class="block text-sm font-medium text-gray-700 mb-1">Cost Price (GHS)</label>
                     <input type="number" step="0.01" id="unit_cost" name="unit_cost" required min="0"
                            class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                            placeholder="e.g., 50.00">
                 </div>
-
                 <div>
                     <label for="selling_price" class="block text-sm font-medium text-gray-700 mb-1">Selling Price (GHS)</label>
                     <input type="number" step="0.01" id="selling_price" name="selling_price" required min="0"
                            class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                            placeholder="e.g., 70.00">
                 </div>
-
                 <div class="md:col-span-5 flex justify-end">
                     <button type="submit"
                             class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-6 rounded-xl transition duration-150 ease-in-out shadow-md hover:shadow-lg">
@@ -87,6 +114,9 @@
             <div class="flex flex-col gap-2 sm:items-end">
                 <p class="text-indigo-200 text-sm"><span class="font-bold text-white">{{ stock|length }}</span> unique items</p>
                 <p class="text-indigo-200 text-sm">Total units: <span class="font-bold text-white">{{ "%.2f"|format(total_units) }}</span></p>
+                {% if low_stock_items %}
+                <p class="text-yellow-300 text-sm font-semibold">⚠️ {{ low_stock_items|length }} low stock item(s)</p>
+                {% endif %}
                 <button onclick="exportToCSV()"
                         class="mt-2 bg-white hover:bg-indigo-50 text-indigo-700 font-semibold py-2 px-5 rounded-xl transition duration-150 shadow-md text-sm flex items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -97,9 +127,9 @@
             </div>
         </div>
 
-        <!-- Search Bar -->
-        <div class="mb-4 flex items-center gap-3">
-            <div class="relative flex-1">
+        <!-- Search Bar & Filter -->
+        <div class="mb-4 flex items-center gap-3 flex-wrap">
+            <div class="relative flex-1 min-w-[200px]">
                 <span class="absolute inset-y-0 left-3 flex items-center text-gray-400">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
@@ -109,13 +139,12 @@
                        oninput="filterStock()"
                        class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm">
             </div>
-            <button onclick="filterStock()"
-                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-5 rounded-xl transition duration-150 shadow-md flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
-                </svg>
-                Search
-            </button>
+            <select id="stockStatusFilter" onchange="filterStock()"
+                    class="p-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm text-sm">
+                <option value="all">All Items</option>
+                <option value="low">Low Stock (≤10)</option>
+                <option value="ok">Sufficient Stock</option>
+            </select>
             <button onclick="clearSearch()"
                     class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-xl transition duration-150">
                 Clear
@@ -139,13 +168,23 @@
                     <tbody class="divide-y divide-gray-200">
                         {% if stock|length == 0 %}
                         <tr>
-                            <td colspan="5" class="p-8 text-center text-gray-500">No items in stock yet.</td>
+                            <td colspan="6" class="p-8 text-center text-gray-500">No items in stock yet.</td>
                         </tr>
                         {% else %}
                         {% for item in stock %}
-                        <tr class="stock-row">
-                            <td class="p-4 font-medium">{{ item.item_name }}</td>
-                            <td class="p-4 text-right">{{ "%.2f"|format(item.quantity) if item.quantity != item.quantity|int else item.quantity|int }}</td>
+                        <tr class="stock-row {% if item.quantity <= 5 %}row-critical{% elif item.quantity <= 10 %}row-warning{% endif %}"
+                            data-qty="{{ item.quantity }}">
+                            <td class="p-4 font-medium">
+                                {{ item.item_name }}
+                                {% if item.quantity <= 5 %}
+                                <span class="ml-2 inline-flex items-center bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full">CRITICAL</span>
+                                {% elif item.quantity <= 10 %}
+                                <span class="ml-2 inline-flex items-center bg-yellow-100 text-yellow-700 text-xs font-bold px-2 py-0.5 rounded-full">LOW</span>
+                                {% endif %}
+                            </td>
+                            <td class="p-4 text-right {% if item.quantity <= 5 %}text-red-600 font-bold{% elif item.quantity <= 10 %}text-yellow-600 font-semibold{% endif %}">
+                                {{ "%.2f"|format(item.quantity) if item.quantity != item.quantity|int else item.quantity|int }}
+                            </td>
                             <td class="p-4 text-right">{{ "%.2f"|format(item.unit_cost) }}</td>
                             <td class="p-4 text-right">{{ "%.2f"|format(item.selling_price) }}</td>
                             <td class="p-4 text-right font-semibold text-indigo-700">{{ "%.2f"|format(item.quantity * item.selling_price) }}</td>
@@ -173,38 +212,29 @@
                 <h3 class="text-2xl font-bold text-gray-800 mb-6">Edit Stock Item</h3>
                 <form method="POST" action="{{ url_for('stock') }}">
                     <input type="hidden" name="edit_id" id="edit-id">
-                    
                     <div class="mb-4">
                         <label for="edit-item_name" class="block text-sm font-medium text-gray-700 mb-1">Item Name</label>
                         <input type="text" id="edit-item_name" name="item_name" required
                                class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
                     </div>
-                    
                     <div class="mb-4">
                         <label for="edit-quantity" class="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
                         <input type="number" step="0.01" id="edit-quantity" name="quantity" required min="0"
                                class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
                     </div>
-                    
                     <div class="mb-4">
                         <label for="edit-unit_cost" class="block text-sm font-medium text-gray-700 mb-1">Cost Price (GHS)</label>
                         <input type="number" step="0.01" id="edit-unit_cost" name="unit_cost" required min="0"
                                class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
                     </div>
-                    
                     <div class="mb-6">
                         <label for="edit-selling_price" class="block text-sm font-medium text-gray-700 mb-1">Selling Price (GHS)</label>
                         <input type="number" step="0.01" id="edit-selling_price" name="selling_price" required min="0"
                                class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
                     </div>
-                    
                     <div class="flex justify-end space-x-3">
-                        <button type="button" onclick="closeEditModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-6 py-2 rounded-lg">
-                            Cancel
-                        </button>
-                        <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg">
-                            Save Changes
-                        </button>
+                        <button type="button" onclick="closeEditModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-6 py-2 rounded-lg">Cancel</button>
+                        <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg">Save Changes</button>
                     </div>
                 </form>
             </div>
@@ -221,12 +251,8 @@
                 <form method="POST" action="{{ url_for('stock') }}">
                     <input type="hidden" name="delete_id" id="delete-id">
                     <div class="flex justify-end space-x-3">
-                        <button type="button" onclick="closeDeleteModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-6 py-2 rounded-lg">
-                            Cancel
-                        </button>
-                        <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg">
-                            Delete
-                        </button>
+                        <button type="button" onclick="closeDeleteModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-6 py-2 rounded-lg">Cancel</button>
+                        <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg">Delete</button>
                     </div>
                 </form>
             </div>
@@ -234,16 +260,12 @@
     </div>
 
     <script>
-        /**
-         * Opens the Edit Modal and populates it with the item's current data.
-         */
         function openEditModal(id, name, quantity, unitCost, sellingPrice) {
             document.getElementById('edit-id').value = id;
             document.getElementById('edit-item_name').value = name;
             document.getElementById('edit-quantity').value = parseFloat(quantity);
             document.getElementById('edit-unit_cost').value = parseFloat(unitCost).toFixed(2);
             document.getElementById('edit-selling_price').value = parseFloat(sellingPrice).toFixed(2);
-
             const modal = document.getElementById('editModal');
             modal.classList.remove('opacity-0', 'pointer-events-none');
             modal.querySelector('.shadow-2xl').classList.remove('scale-95');
@@ -257,18 +279,13 @@
             modal.querySelector('.shadow-2xl').classList.add('scale-95');
         }
 
-        // Close modal when clicking outside
         document.getElementById('editModal').addEventListener('click', (e) => {
             if (e.target === document.getElementById('editModal')) closeEditModal();
         });
 
-        /**
-         * Opens the Delete Confirmation Modal.
-         */
         function confirmDelete(id, name) {
             document.getElementById('delete-id').value = id;
             document.getElementById('item_name_to_delete').textContent = name;
-
             const modal = document.getElementById('deleteModal');
             modal.classList.remove('opacity-0', 'pointer-events-none');
             modal.querySelector('.shadow-2xl').classList.remove('scale-95');
@@ -282,20 +299,25 @@
             modal.querySelector('.shadow-2xl').classList.add('scale-95');
         }
 
-        // Close modal when clicking outside
         document.getElementById('deleteModal').addEventListener('click', (e) => {
             if (e.target === document.getElementById('deleteModal')) closeDeleteModal();
         });
 
-        // Search/filter stock rows
         function filterStock() {
             const query = document.getElementById('stockSearch').value.toLowerCase().trim();
+            const statusFilter = document.getElementById('stockStatusFilter').value;
             const rows = document.querySelectorAll('.stock-row');
             let anyVisible = false;
 
             rows.forEach(row => {
                 const name = row.querySelector('td:first-child').textContent.toLowerCase();
-                if (name.includes(query)) {
+                const qty = parseFloat(row.dataset.qty);
+                const matchesSearch = name.includes(query);
+                const matchesStatus = statusFilter === 'all'
+                    || (statusFilter === 'low' && qty <= 10)
+                    || (statusFilter === 'ok' && qty > 10);
+
+                if (matchesSearch && matchesStatus) {
                     row.style.display = '';
                     anyVisible = true;
                 } else {
@@ -303,13 +325,12 @@
                 }
             });
 
-            // Show/hide no-results message
             let noResult = document.getElementById('no-search-result');
-            if (!anyVisible && query !== '') {
+            if (!anyVisible) {
                 if (!noResult) {
                     noResult = document.createElement('tr');
                     noResult.id = 'no-search-result';
-                    noResult.innerHTML = '<td colspan="5" class="p-6 text-center text-gray-400">No items match your search.</td>';
+                    noResult.innerHTML = '<td colspan="6" class="p-6 text-center text-gray-400">No items match your search.</td>';
                     document.querySelector('tbody').appendChild(noResult);
                 }
                 noResult.style.display = '';
@@ -320,41 +341,37 @@
 
         function clearSearch() {
             document.getElementById('stockSearch').value = '';
+            document.getElementById('stockStatusFilter').value = 'all';
             filterStock();
         }
 
-        // Allow pressing Enter in search box
         document.getElementById('stockSearch').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') filterStock();
         });
 
-        // Export stock table to CSV
         function exportToCSV() {
-            const rows = [
-                ['Item Name', 'Quantity', 'Cost Price (GHS)', 'Selling Price (GHS)', 'Total Value (GHS)']
-            ];
-
+            const rows = [['Item Name', 'Quantity', 'Cost Price (GHS)', 'Selling Price (GHS)', 'Total Value (GHS)', 'Status']];
             const tableRows = document.querySelectorAll('.stock-row');
             tableRows.forEach(row => {
                 const cells = row.querySelectorAll('td');
                 if (cells.length >= 5) {
-                    const name      = cells[0].textContent.trim();
-                    const qty       = cells[1].textContent.trim();
-                    const cost      = cells[2].textContent.trim();
-                    const selling   = cells[3].textContent.trim();
-                    const total     = cells[4].textContent.trim();
-                    rows.push([name, qty, cost, selling, total]);
+                    const qty = parseFloat(row.dataset.qty);
+                    const status = qty <= 5 ? 'CRITICAL' : qty <= 10 ? 'LOW' : 'OK';
+                    rows.push([
+                        cells[0].textContent.trim().replace(/CRITICAL|LOW/g, '').trim(),
+                        cells[1].textContent.trim(),
+                        cells[2].textContent.trim(),
+                        cells[3].textContent.trim(),
+                        cells[4].textContent.trim(),
+                        status
+                    ]);
                 }
             });
-
-            // Add totals row
             const totalValue = document.querySelector('.text-5xl').textContent.replace('GHS', '').trim();
-            rows.push(['', '', '', 'TOTAL PROJECTED VALUE', totalValue]);
-
+            rows.push(['', '', '', '', 'TOTAL PROJECTED VALUE', totalValue]);
             const csvContent = rows.map(r =>
                 r.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(',')
             ).join('\n');
-
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
