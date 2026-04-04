@@ -1392,6 +1392,9 @@ def setup_admin():
         cursor.close()
         conn.close()
 
+# Required for Vercel
+application = app
+
 if __name__ == '__main__':
     init_db()
     app.run(debug=True)
