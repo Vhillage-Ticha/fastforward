@@ -667,7 +667,10 @@ def daily_sales_summary():
             items = json.loads(r['items_sold'])
         except Exception:
             items = []
-        sales_list.append({'id': r['id'], 'total_amount': r['total_amount'], 'sale_date': r['sale_date'], 'items': items})
+        sale_date = r['sale_date']
+        if hasattr(sale_date, 'isoformat'):
+            sale_date = sale_date.isoformat()
+        sales_list.append({'id': r['id'], 'total_amount': r['total_amount'], 'sale_date': sale_date, 'items': items})
     today_date = date.today().isoformat()
     return render_template('daily_sales_summary.html', sales=sales_list, today_date=today_date)
 
