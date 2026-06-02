@@ -429,6 +429,8 @@ def payables():
         cursor.execute('SELECT MAX(transaction_date) as latest FROM transactions WHERE payable_id=%s', (r['id'],))
         latest = cursor.fetchone()
         display_date = latest['latest'] if latest and latest['latest'] else r['due_date']
+        if hasattr(display_date, 'isoformat'):
+            display_date = display_date.isoformat()
         if rem > 0.005:
             total_payables_calc += rem
             payables_list.append({'id': r['id'], 'supplier': r['supplier'], 'original_amount': r['original_amount'],
@@ -489,6 +491,8 @@ def receivables():
         cursor.execute('SELECT MAX(transaction_date) as latest FROM transactions WHERE receivable_id=%s', (r['id'],))
         latest = cursor.fetchone()
         display_date = latest['latest'] if latest and latest['latest'] else r['due_date']
+        if hasattr(display_date, 'isoformat'):
+            display_date = display_date.isoformat()
         if rem > 0.005:
             total_receivables_calc += rem
             receivables_list.append({'id': r['id'], 'customer': r['customer'], 'original_amount': r['original_amount'],
@@ -578,7 +582,10 @@ def history(entity_type, entity_id):
     for tx in txs:
         amt = tx['amount']
         running -= amt
-        history_list.append({'id': tx['id'], 'amount': f"{abs(amt):.2f}", 'date': tx['transaction_date'],
+        tx_date = tx['transaction_date']
+        if hasattr(tx_date, 'isoformat'):
+            tx_date = tx_date.isoformat()
+        history_list.append({'id': tx['id'], 'amount': f"{abs(amt):.2f}", 'date': tx_date,
                               'description': tx['description'] or '',
                               'tx_label': 'Payment' if amt > 0 else 'New Charge',
                               'tx_color': 'text-green-600' if amt > 0 else 'text-red-600',
@@ -717,8 +724,11 @@ def cash_flow():
         except Exception:
             item_names = 'Sale'
         total_from_sales += r['total_amount']
+        sale_date = r['sale_date']
+        if hasattr(sale_date, 'isoformat'):
+            sale_date = sale_date.isoformat()
         sales_entries.append({
-            'date': r['sale_date'],
+            'date': sale_date,
             'source': 'Sales',
             'description': item_names,
             'amount': r['total_amount'],
